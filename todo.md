@@ -1,0 +1,32 @@
+# Project TODO
+
+- [x] Write the FraudLens product requirements document and implementation decisions.
+- [x] Define transaction, prediction, case-note, and monitoring domain models in the database schema.
+- [x] Implement deterministic transaction risk scoring with low, medium, and high labels and probability output.
+- [x] Persist submitted transactions, scores, feature drivers, analyst status, and case notes.
+- [x] Implement typed server procedures for dashboard data, transaction submission, filtering, case updates, and monitoring metrics.
+- [x] Implement an LLM explanation contract that translates risk factors into investigator-friendly language with deterministic fallback text.
+- [x] Create a polished dashboard shell using the template DashboardLayout component and an analyst-focused navigation structure.
+- [x] Build the transaction risk scoring dashboard with high-risk alert emphasis, probability scores, and key risk factors.
+- [x] Build the manual transaction submission form with immediate prediction results and validation.
+- [x] Build a transaction detail and risk-explanation view with plain-English contributing-factor explanations.
+- [x] Build case-management controls for confirmed fraud, legitimate, and under-review statuses with analyst notes.
+- [x] Build a filterable transaction history table for risk level, status, date range, and merchant category.
+- [x] Build a model-performance view with precision, recall, F1-score, and a confusion matrix.
+- [x] Build a data-drift monitoring view comparing recent feature distributions with the training baseline.
+- [x] Add high-risk notification behavior that surfaces newly flagged transactions in the dashboard.
+- [x] Write and run Vitest coverage for scoring rules, explanation fallback behavior, and case-management validation.
+- [x] Verify desktop and mobile dashboard views, then refine visual hierarchy, spacing, accessibility, and loading/empty/error states.
+- [x] Document architecture, mock-data limitations, and portfolio presentation guidance in the README.
+- [x] Add visible manual-assessment validation states and test invalid inputs.
+- [x] Add a dedicated transaction detail view with individual plain-English risk explanations.
+- [x] Add an in-dashboard new-alert notification treatment for freshly created high-risk assessments.
+- [x] Add Vitest coverage for case-status updates, note validation, and invalid workflow inputs.
+- [x] Audit and verify loading, empty, error, keyboard-focus, and responsive states across the analyst workspace.
+- [x] Add and verify explicit keyboard-focus styling and empty, loading, and error-state treatments for major analyst views.
+- [x] Add automated verification or documented QA evidence for the accessibility and workflow state audit.
+- [x] Audit public-facing files for platform-specific labels, metadata, and project-presentation wording.
+- [x] Update public-facing visual branding, browser metadata, and product copy for a consistent FraudLens identity.
+- [x] Rewrite public README wording for a concise, product-focused portfolio presentation.
+- [x] Verify the rebranded dashboard and documentation, then save an updated project checkpoint.
+- [x] Save a new FraudLens checkpoint that captures the completed public rebrand and documentation update.
