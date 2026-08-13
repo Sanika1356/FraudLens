@@ -1,21 +1,25 @@
 import { useAuth as useClerkAuth, useClerk, useUser } from "@clerk/react";
+import { trpc } from "@/lib/trpc";
+
+export type FraudLensRole = "analyst" | "manager" | "admin";
 
 export type FraudLensUser = {
   id: string;
   openId: string;
   name: string | null;
   email: string | null;
-  role: "user";
+  role: FraudLensRole;
 };
 
 /**
- * Returns the authenticated Clerk user in the shape expected by the FraudLens UI.
- * Application roles are introduced in the next authorization task.
+ * Returns the authenticated Clerk user together with the server-authoritative
+ * FraudLens role. Client role labels are never used as an authorization boundary.
  */
 export function useAuth() {
   const { isLoaded: authLoaded, isSignedIn } = useClerkAuth();
   const { isLoaded: userLoaded, user: clerkUser } = useUser();
   const { signOut } = useClerk();
+  const profile = trpc.auth.me.useQuery(undefined, { enabled: Boolean(isSignedIn) });
 
   const user: FraudLensUser | null = clerkUser
     ? {
@@ -23,16 +27,18 @@ export function useAuth() {
         openId: clerkUser.id,
         name: clerkUser.fullName || clerkUser.username || null,
         email: clerkUser.primaryEmailAddress?.emailAddress ?? null,
-        role: "user",
+        role: profile.data?.role ?? "analyst",
       }
     : null;
 
   return {
     user,
-    loading: !authLoaded || !userLoaded,
-    error: null,
+    loading: !authLoaded || !userLoaded || (Boolean(isSignedIn) && profile.isLoading),
+    error: profile.error,
     isAuthenticated: Boolean(isSignedIn),
-    refresh: async () => undefined,
+    refresh: async () => {
+      await profile.refetch();
+    },
     logout: async () => {
       await signOut({ redirectUrl: "/sign-in" });
     },

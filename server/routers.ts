@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { systemRouter } from "./_core/systemRouter";
-import { protectedProcedure, publicProcedure, router } from "./_core/trpc";
+import { managerProcedure, protectedProcedure, publicProcedure, router } from "./_core/trpc";
 import { getDb, persistTransaction } from "./db";
 import { demoTransactions, driftDemo, RiskRecord } from "./demoData";
 import { createInvestigatorSummary } from "./investigatorSummary";
@@ -150,8 +150,8 @@ export const appRouter = router({
       await persistTransaction(asInsertTransaction(record));
       return { record, source: summary.source };
     }),
-    modelHealth: protectedProcedure.query(() => modelHealth),
-    drift: protectedProcedure.query(() => driftDemo),
+    modelHealth: managerProcedure.query(() => modelHealth),
+    drift: managerProcedure.query(() => driftDemo),
     persistenceStatus: protectedProcedure.query(async () => ({ connected: Boolean(await getDb()) })),
   }),
 });

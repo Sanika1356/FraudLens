@@ -12,17 +12,19 @@ function createContext(user: AuthenticatedUser | null): TrpcContext {
   };
 }
 
-const authenticatedUser: AuthenticatedUser = {
-  id: 1,
-  openId: "user_test_123",
-  email: "analyst@example.com",
-  name: "Fraud Analyst",
-  loginMethod: "clerk",
-  role: "user",
-  createdAt: new Date(),
-  updatedAt: new Date(),
-  lastSignedIn: new Date(),
-};
+function createUser(role: AuthenticatedUser["role"]): AuthenticatedUser {
+  return {
+    id: 1,
+    openId: `${role}_test_123`,
+    email: `${role}@example.com`,
+    name: `FraudLens ${role}`,
+    loginMethod: "clerk",
+    role,
+    createdAt: new Date(),
+    updatedAt: new Date(),
+    lastSignedIn: new Date(),
+  };
+}
 
 describe("Clerk-protected FraudLens APIs", () => {
   it("rejects an unauthenticated request to risk data", async () => {
@@ -33,12 +35,36 @@ describe("Clerk-protected FraudLens APIs", () => {
     });
   });
 
-  it("permits an authenticated analyst to read risk data", async () => {
-    const caller = appRouter.createCaller(createContext(authenticatedUser));
+  it("permits an analyst to view transactions and update an investigation case", async () => {
+    const analyst = createUser("analyst");
+    const caller = appRouter.createCaller(createContext(analyst));
+    const firstRecord = (await caller.risk.list({}))[0];
 
-    const overview = await caller.risk.overview();
+    expect(firstRecord).toBeDefined();
+    await expect(caller.risk.updateCase({
+      id: firstRecord!.id,
+      caseStatus: "under_review",
+      note: "Analyst access verification.",
+    })).resolves.toMatchObject({ id: firstRecord!.id, caseStatus: "under_review" });
+    await expect(caller.auth.me()).resolves.toEqual(analyst);
+  });
 
-    expect(overview.total).toBeGreaterThan(0);
-    await expect(caller.auth.me()).resolves.toEqual(authenticatedUser);
+  it("prevents an analyst from viewing model-monitoring data", async () => {
+    const caller = appRouter.createCaller(createContext(createUser("analyst")));
+
+    await expect(caller.risk.modelHealth()).rejects.toMatchObject({
+      code: "FORBIDDEN",
+    });
+    await expect(caller.risk.drift()).rejects.toMatchObject({
+      code: "FORBIDDEN",
+    });
+  });
+
+  it("permits managers and administrators to view model-monitoring data", async () => {
+    const manager = appRouter.createCaller(createContext(createUser("manager")));
+    const administrator = appRouter.createCaller(createContext(createUser("admin")));
+
+    await expect(manager.risk.modelHealth()).resolves.toBeDefined();
+    await expect(administrator.risk.drift()).resolves.toBeDefined();
   });
 });

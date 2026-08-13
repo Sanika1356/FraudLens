@@ -31,8 +31,8 @@ const menuItems = [
   { icon: ClipboardList, label: "Transactions", path: "/transactions" },
   { icon: PlusCircle, label: "New Assessment", path: "/assess" },
   { icon: ShieldCheck, label: "Casework", path: "/casework" },
-  { icon: Activity, label: "Model Health", path: "/model-health" },
-  { icon: Radar, label: "Drift Monitor", path: "/drift" },
+  { icon: Activity, label: "Model Health", path: "/model-health", requiresManager: true },
+  { icon: Radar, label: "Drift Monitor", path: "/drift", requiresManager: true },
 ];
 
 const SIDEBAR_WIDTH_KEY = "fraudlens-sidebar-width";
@@ -40,7 +40,7 @@ const DEFAULT_WIDTH = 278;
 const MIN_WIDTH = 224;
 const MAX_WIDTH = 360;
 
-export default function DashboardLayout({ children, allowDemoAccess = false }: { children: React.ReactNode; allowDemoAccess?: boolean }) {
+export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const [sidebarWidth, setSidebarWidth] = useState(() => Number(localStorage.getItem(SIDEBAR_WIDTH_KEY)) || DEFAULT_WIDTH);
   const { loading, user } = useAuth();
 
@@ -48,9 +48,9 @@ export default function DashboardLayout({ children, allowDemoAccess = false }: {
     localStorage.setItem(SIDEBAR_WIDTH_KEY, String(sidebarWidth));
   }, [sidebarWidth]);
 
-  if (loading && !allowDemoAccess) return <DashboardLayoutSkeleton />;
+  if (loading) return <DashboardLayoutSkeleton />;
 
-  if (!user && !allowDemoAccess) {
+  if (!user) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-[#07111e] p-6 text-slate-100">
         <div className="w-full max-w-md rounded-2xl border border-cyan-300/15 bg-slate-950/70 p-9 shadow-2xl shadow-cyan-950/30">
@@ -66,12 +66,12 @@ export default function DashboardLayout({ children, allowDemoAccess = false }: {
 
   return (
     <SidebarProvider style={{ "--sidebar-width": `${sidebarWidth}px` } as CSSProperties}>
-      <DashboardLayoutContent setSidebarWidth={setSidebarWidth} allowDemoAccess={allowDemoAccess}>{children}</DashboardLayoutContent>
+      <DashboardLayoutContent setSidebarWidth={setSidebarWidth}>{children}</DashboardLayoutContent>
     </SidebarProvider>
   );
 }
 
-function DashboardLayoutContent({ children, setSidebarWidth, allowDemoAccess }: { children: React.ReactNode; setSidebarWidth: (width: number) => void; allowDemoAccess: boolean }) {
+function DashboardLayoutContent({ children, setSidebarWidth }: { children: React.ReactNode; setSidebarWidth: (width: number) => void }) {
   const { user, logout } = useAuth();
   const [location, setLocation] = useLocation();
   const { state, toggleSidebar } = useSidebar();
@@ -79,8 +79,10 @@ function DashboardLayoutContent({ children, setSidebarWidth, allowDemoAccess }: 
   const sidebarRef = useRef<HTMLDivElement>(null);
   const isCollapsed = state === "collapsed";
   const isMobile = useIsMobile();
-  const activeMenuItem = menuItems.find((item) => item.path === location);
-  const displayName = user?.name || "Demo analyst";
+  const availableMenuItems = menuItems.filter((item) => !item.requiresManager || user?.role !== "analyst");
+  const activeMenuItem = availableMenuItems.find((item) => item.path === location);
+  const displayName = user?.name || "FraudLens user";
+  const roleLabel = user?.role === "admin" ? "Administrator" : user?.role === "manager" ? "Manager" : "Analyst";
 
   useEffect(() => {
     const handleMouseMove = (event: MouseEvent) => {
@@ -117,12 +119,12 @@ function DashboardLayoutContent({ children, setSidebarWidth, allowDemoAccess }: 
           <SidebarContent className="gap-0 px-2 pt-3">
             {!isCollapsed && <p className="px-3 pb-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500">Workspace</p>}
             <SidebarMenu>
-              {menuItems.map((item) => <SidebarMenuItem key={item.path}><SidebarMenuButton isActive={location === item.path} onClick={() => setLocation(item.path)} tooltip={item.label} className="h-10 rounded-lg px-3 text-slate-400 hover:bg-white/[0.07] hover:text-slate-100 data-[active=true]:bg-cyan-300/[0.11] data-[active=true]:text-cyan-200"><item.icon className="h-4 w-4" /><span>{item.label}</span></SidebarMenuButton></SidebarMenuItem>)}
+              {availableMenuItems.map((item) => <SidebarMenuItem key={item.path}><SidebarMenuButton isActive={location === item.path} onClick={() => setLocation(item.path)} tooltip={item.label} className="h-10 rounded-lg px-3 text-slate-400 hover:bg-white/[0.07] hover:text-slate-100 data-[active=true]:bg-cyan-300/[0.11] data-[active=true]:text-cyan-200"><item.icon className="h-4 w-4" /><span>{item.label}</span></SidebarMenuButton></SidebarMenuItem>)}
             </SidebarMenu>
           </SidebarContent>
           <SidebarFooter className="p-3">
             <div className="mb-3 rounded-lg border border-amber-200/10 bg-amber-300/[0.05] px-3 py-2.5 group-data-[collapsible=icon]:hidden"><p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-amber-200">Portfolio preview</p><p className="mt-1 text-xs leading-4 text-slate-500">Illustrative cases. No live payment data.</p></div>
-            {user ? <DropdownMenu><DropdownMenuTrigger asChild><button className="flex w-full items-center gap-3 rounded-lg px-1 py-1 text-left transition-colors hover:bg-white/[0.06]"><Avatar className="h-9 w-9 border border-white/10"><AvatarFallback className="bg-cyan-300/10 text-xs font-semibold text-cyan-200">{displayName.charAt(0).toUpperCase()}</AvatarFallback></Avatar><div className="min-w-0 flex-1 group-data-[collapsible=icon]:hidden"><p className="truncate text-sm font-medium text-slate-200">{displayName}</p><p className="mt-1 truncate text-xs text-slate-500">Investigator</p></div></button></DropdownMenuTrigger><DropdownMenuContent align="end" className="w-48"><DropdownMenuItem onClick={logout} className="cursor-pointer text-destructive focus:text-destructive"><LogOut className="mr-2 h-4 w-4" />Sign out</DropdownMenuItem></DropdownMenuContent></DropdownMenu> : null}
+            {user ? <DropdownMenu><DropdownMenuTrigger asChild><button className="flex w-full items-center gap-3 rounded-lg px-1 py-1 text-left transition-colors hover:bg-white/[0.06]"><Avatar className="h-9 w-9 border border-white/10"><AvatarFallback className="bg-cyan-300/10 text-xs font-semibold text-cyan-200">{displayName.charAt(0).toUpperCase()}</AvatarFallback></Avatar><div className="min-w-0 flex-1 group-data-[collapsible=icon]:hidden"><p className="truncate text-sm font-medium text-slate-200">{displayName}</p><p className="mt-1 truncate text-xs text-slate-500">{roleLabel}</p></div></button></DropdownMenuTrigger><DropdownMenuContent align="end" className="w-48"><DropdownMenuItem onClick={logout} className="cursor-pointer text-destructive focus:text-destructive"><LogOut className="mr-2 h-4 w-4" />Sign out</DropdownMenuItem></DropdownMenuContent></DropdownMenu> : null}
           </SidebarFooter>
         </Sidebar>
         <div className={`absolute right-0 top-0 z-50 h-full w-1 cursor-col-resize transition-colors hover:bg-cyan-300/30 ${isCollapsed ? "hidden" : ""}`} onMouseDown={() => setIsResizing(true)} />

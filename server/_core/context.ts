@@ -2,6 +2,7 @@ import { getAuth, type ExpressRequestWithAuth } from "@clerk/express";
 import type { CreateExpressContextOptions } from "@trpc/server/adapters/express";
 import type { User } from "../../drizzle/schema";
 import { getUserByOpenId, upsertUser } from "../db";
+import { resolveBootstrapRole } from "./env";
 
 export type TrpcContext = {
   req: CreateExpressContextOptions["req"];
@@ -17,7 +18,7 @@ function createSessionUser(openId: string): User {
     name: null,
     email: null,
     loginMethod: "clerk",
-    role: "user",
+    role: resolveBootstrapRole(openId),
     createdAt: now,
     updatedAt: now,
     lastSignedIn: now,
@@ -34,7 +35,11 @@ export async function createContext(
     try {
       user = (await getUserByOpenId(auth.userId)) ?? null;
       if (!user) {
-        await upsertUser({ openId: auth.userId, loginMethod: "clerk" });
+        await upsertUser({
+          openId: auth.userId,
+          loginMethod: "clerk",
+          role: resolveBootstrapRole(auth.userId),
+        });
         user = (await getUserByOpenId(auth.userId)) ?? null;
       }
     } catch (error) {
