@@ -103,7 +103,9 @@ export default function App() {
         <TooltipProvider>
           <Toaster theme="dark" />
           <Switch>
+            <Route path="/sign-in/*"><AuthenticationScreen mode="sign-in" /></Route>
             <Route path="/sign-in"><AuthenticationScreen mode="sign-in" /></Route>
+            <Route path="/sign-up/*"><AuthenticationScreen mode="sign-up" /></Route>
             <Route path="/sign-up"><AuthenticationScreen mode="sign-up" /></Route>
             <Route path="/select-organization"><OrganizationSelectionScreen /></Route>
             <Route><ProtectedWorkspace /></Route>
