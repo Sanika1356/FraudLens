@@ -11,7 +11,6 @@ This list contains only FraudLens work that remains to be implemented.
 ## Alerts, Reporting, and Model Oversight
 
 - [ ] Add automatic weekly risk-summary delivery after deployment, using the completed reporting dashboard and export data.
-- [ ] Add a versioned public API with scoped API keys, rate limits, input validation, request logs, and documentation for programmatic transaction submission.
 
 ## Deployment, Reliability, and Engineering Quality
 

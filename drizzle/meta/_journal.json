@@ -71,6 +71,13 @@
       "when": 1786632768698,
       "tag": "0009_medical_molten_man",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "5",
+      "when": 1786637182155,
+      "tag": "0010_wide_wallow",
+      "breakpoints": true
     }
   ]
 }

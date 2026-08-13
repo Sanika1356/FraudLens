@@ -7,6 +7,7 @@ import { applyCaseUpdate, applyCaseWorkflowUpdate, caseUpdateSchema, caseWorkflo
 import { shouldSendHighRiskAlert } from "./notifications";
 import { buildModelQualityReport, classifyOutcome } from "./outcomeFeedback";
 import { buildOperationalReport, reportToCsv, reportToText } from "./reports";
+import { PUBLIC_API_KEY_SCOPE, apiKeysMatch, createApiKeySecret, extractBearerApiKey, isApiKeyActive, parseApiKeyScopes } from "./apiKeys";
 
 describe("FraudLens workflow validation", () => {
   it("rejects unsafe manual assessment inputs before scoring", () => {
@@ -117,6 +118,32 @@ describe("FraudLens workflow validation", () => {
     expect(shouldSendHighRiskAlert(81, 80)).toBe(true);
     expect(shouldSendHighRiskAlert(79, 80)).toBe(false);
     expect(shouldSendHighRiskAlert(Number.NaN, 80)).toBe(false);
+  });
+
+  it("creates non-recoverable API-key material and accepts only a valid bearer credential", () => {
+    const first = createApiKeySecret();
+    const second = createApiKeySecret();
+
+    expect(first.secret).toMatch(/^fl_live_[A-Za-z0-9_-]{32,128}$/);
+    expect(first.keyPrefix).toContain("…");
+    expect(first.keyHash).not.toContain(first.secret);
+    expect(first.keyHash).not.toBe(second.keyHash);
+    expect(apiKeysMatch(first.secret, first.secret)).toBe(true);
+    expect(apiKeysMatch(first.secret, second.secret)).toBe(false);
+    expect(extractBearerApiKey(`Bearer ${first.secret}`)).toBe(first.secret);
+    expect(extractBearerApiKey(`bearer ${first.secret}`)).toBe(first.secret);
+    expect(extractBearerApiKey("Bearer not-an-api-key")).toBeNull();
+    expect(extractBearerApiKey(`Basic ${first.secret}`)).toBeNull();
+  });
+
+  it("restricts public API keys to transaction submission and rejects revoked or expired keys", () => {
+    expect(parseApiKeyScopes(JSON.stringify([PUBLIC_API_KEY_SCOPE, "admin:all"]))).toEqual([PUBLIC_API_KEY_SCOPE]);
+    expect(parseApiKeyScopes("not-json")).toEqual([]);
+    const now = new Date("2026-08-13T12:00:00.000Z");
+    expect(isApiKeyActive(null, null, now)).toBe(true);
+    expect(isApiKeyActive(null, new Date("2026-08-13T12:01:00.000Z"), now)).toBe(true);
+    expect(isApiKeyActive(null, new Date("2026-08-13T11:59:00.000Z"), now)).toBe(false);
+    expect(isApiKeyActive(new Date("2026-08-13T11:00:00.000Z"), null, now)).toBe(false);
   });
 
   it("requires valid configured destinations before alert channels can be enabled", () => {

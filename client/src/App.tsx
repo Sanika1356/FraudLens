@@ -3,6 +3,7 @@ import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import {
   AdministratorManagementPage,
+  ApiIntegrationsPage,
   AuditLogPage,
   AssessmentPage,
   CaseQueuesPage,
@@ -34,6 +35,7 @@ function WorkspaceRouter() {
       <Route path="/audit" component={AuditLogPage} />
       <Route path="/alerts" component={NotificationSettingsPage} />
       <Route path="/reports" component={ReportsPage} />
+      <Route path="/api" component={ApiIntegrationsPage} />
       <Route path="/team" component={AdministratorManagementPage} />
       <Route path="/404" component={NotFound} />
       <Route component={NotFound} />

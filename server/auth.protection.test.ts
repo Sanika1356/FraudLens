@@ -329,6 +329,23 @@ describe("Clerk-protected FraudLens APIs", () => {
     expect(csv.content).toContain(assessed.reference);
   });
 
+  it("requires manager access and isolates API keys and public request logs by organization", async () => {
+    const analyst = appRouter.createCaller(createContext(createUser("analyst"), "org_api_access"));
+    const firstWorkspace = appRouter.createCaller(createContext(createUser("manager"), "org_api_first"));
+    const secondWorkspace = appRouter.createCaller(createContext(createUser("manager"), "org_api_second"));
+
+    await expect(analyst.apiKeys.list()).rejects.toMatchObject({ code: "FORBIDDEN" });
+    const issued = await firstWorkspace.apiKeys.create({ name: "First workspace ingestion" });
+    const firstKeys = await firstWorkspace.apiKeys.list();
+    const secondKeys = await secondWorkspace.apiKeys.list();
+
+    expect(issued.secret).toMatch(/^fl_live_/);
+    expect(issued.apiKey.scopes).toEqual(["transactions:write"]);
+    expect(firstKeys).toEqual(expect.arrayContaining([expect.objectContaining({ id: issued.apiKey.id, name: "First workspace ingestion" })]));
+    expect(secondKeys.some((key) => key.id === issued.apiKey.id)).toBe(false);
+    await expect(secondWorkspace.apiKeys.revoke({ id: issued.apiKey.id })).rejects.toThrow("API key not found in this organization.");
+  });
+
   it("permits managers and administrators to view model-monitoring data", async () => {
     const manager = appRouter.createCaller(createContext(createUser("manager")));
     const administrator = appRouter.createCaller(createContext(createUser("admin")));

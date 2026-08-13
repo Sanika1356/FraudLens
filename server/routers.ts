@@ -12,7 +12,7 @@ import {
   revokeMemberSessions,
   revokeOrganizationInvitation,
 } from "./adminManagement";
-import { addCaseComment, addCaseEvidence, deleteOutcomeFeedback, getAuditEventsByOrganization, getCaseCollaboration, getDb, getNotificationPreferences, getOutcomeFeedbackByOrganization, getTransactionReferencesByOrganization, persistTransaction, recordAuditEvent, replaceCaseTags, upsertNotificationPreferences, upsertOutcomeFeedback } from "./db";
+import { addCaseComment, addCaseEvidence, createApiKey, deleteOutcomeFeedback, getApiKeysByOrganization, getApiRequestLogsByOrganization, getAuditEventsByOrganization, getCaseCollaboration, getDb, getNotificationPreferences, getOutcomeFeedbackByOrganization, getTransactionReferencesByOrganization, persistTransaction, recordAuditEvent, replaceCaseTags, revokeApiKey, upsertNotificationPreferences, upsertOutcomeFeedback } from "./db";
 import { createEvidenceStorageKey, isSupabaseStorageConfigured, storageDelete, storagePut } from "./storage";
 import { decodeAndValidateEvidenceAttachment } from "./evidenceFiles";
 import { demoTransactions, driftDemo, RiskRecord } from "./demoData";
@@ -22,6 +22,7 @@ import { CASE_STATUSES, RISK_LEVELS, RiskInput, scoreTransaction } from "./riskE
 import { parseCsvImport } from "./csvImport";
 import { ALERT_CHANNELS, createTestAlertTransaction, isAllowedSlackWebhookUrl, isAllowedTeamsWebhookUrl, sendAlertNotifications } from "./notifications";
 import { buildOperationalReport, reportFileName, reportToCsv, reportToText } from "./reports";
+import { apiKeyDisclosureWarning, createApiKeySecret, parseApiKeyScopes, PUBLIC_API_KEY_SCOPE } from "./apiKeys";
 
 export const riskInputSchema = z.object({
   amount: z.number().positive().max(1000000),
@@ -197,6 +198,59 @@ function asInsertTransaction(record: RiskRecord) {
   } as const;
 }
 
+export type AssessmentSubmissionActor = {
+  id: string | null;
+  name: string | null;
+  source: "dashboard" | "public_api";
+  apiKeyId?: number;
+};
+
+/**
+ * Creates, persists, audits, and evaluates alerts for a scored transaction. The dashboard
+ * and public API use this one workflow to prevent behavior from drifting between channels.
+ */
+export async function submitRiskAssessment(
+  orgId: string,
+  input: RiskInput,
+  actor: AssessmentSubmissionActor,
+  reference?: string,
+): Promise<RiskRecord> {
+  const record = createRiskRecord(input, reference);
+  getRecords(orgId).unshift(record);
+  await persistTransaction(orgId, asInsertTransaction(record));
+  await recordAuditEvent({
+    orgId,
+    eventType: "case.assessment_created",
+    actorId: actor.id,
+    actorName: actor.name,
+    subjectType: "case",
+    subjectId: String(record.id),
+    summary: `Created case ${record.reference} from a ${actor.source === "public_api" ? "public API" : "dashboard"} risk assessment.`,
+    metadata: {
+      riskLevel: record.riskLevel,
+      casePriority: record.casePriority,
+      source: actor.source,
+      apiKeyId: actor.apiKeyId ?? null,
+    },
+  });
+  void sendAlertNotifications(orgId, record).catch((error) => console.error("[FraudLens] Alert evaluation failed", error));
+  return record;
+}
+
+function summarizeApiKey(key: Awaited<ReturnType<typeof getApiKeysByOrganization>>[number]) {
+  return {
+    id: key.id,
+    name: key.name,
+    keyPrefix: key.keyPrefix,
+    scopes: parseApiKeyScopes(key.scopesJson),
+    createdByName: key.createdByName,
+    createdAt: key.createdAt,
+    lastUsedAt: key.lastUsedAt,
+    expiresAt: key.expiresAt,
+    revokedAt: key.revokedAt,
+  };
+}
+
 function buildOverview(records: RiskRecord[]) {
   const total = records.length;
   const highRisk = records.filter((record) => record.riskLevel === "high");
@@ -268,6 +322,56 @@ export const appRouter = router({
       });
       return { results };
     }),
+  }),
+  apiKeys: router({
+    list: organizationManagerProcedure.query(async ({ ctx }) => {
+      const keys = await getApiKeysByOrganization(ctx.orgId);
+      return keys.map(summarizeApiKey);
+    }),
+    create: organizationManagerProcedure.input(z.object({
+      name: z.string().trim().min(3).max(80),
+      expiresAt: z.date().nullable().optional(),
+    })).mutation(async ({ ctx, input }) => {
+      if (input.expiresAt && input.expiresAt <= new Date()) throw new Error("An API key expiry date must be in the future.");
+      const issued = createApiKeySecret();
+      const key = await createApiKey({
+        orgId: ctx.orgId,
+        name: input.name,
+        keyPrefix: issued.keyPrefix,
+        keyHash: issued.keyHash,
+        scopes: [PUBLIC_API_KEY_SCOPE],
+        createdById: ctx.user!.openId,
+        createdByName: ctx.user!.name ?? ctx.user!.email ?? "Manager",
+        expiresAt: input.expiresAt ?? null,
+      });
+      await recordAuditEvent({
+        orgId: ctx.orgId,
+        eventType: "api_key.created",
+        actorId: ctx.user!.openId,
+        actorName: ctx.user!.name ?? ctx.user!.email,
+        subjectType: "api_key",
+        subjectId: String(key.id),
+        summary: `Created API key ${key.name}.`,
+        metadata: { scopes: [PUBLIC_API_KEY_SCOPE], expiresAt: key.expiresAt?.toISOString() ?? null },
+      });
+      return { apiKey: summarizeApiKey(key), secret: issued.secret, disclosureWarning: apiKeyDisclosureWarning() };
+    }),
+    revoke: organizationManagerProcedure.input(z.object({ id: z.number().int().positive() })).mutation(async ({ ctx, input }) => {
+      const key = await revokeApiKey(ctx.orgId, input.id);
+      if (!key) throw new Error("API key not found in this organization.");
+      await recordAuditEvent({
+        orgId: ctx.orgId,
+        eventType: "api_key.revoked",
+        actorId: ctx.user!.openId,
+        actorName: ctx.user!.name ?? ctx.user!.email,
+        subjectType: "api_key",
+        subjectId: String(key.id),
+        summary: `Revoked API key ${key.name}.`,
+        metadata: { keyPrefix: key.keyPrefix },
+      });
+      return summarizeApiKey(key);
+    }),
+    requestLogs: organizationManagerProcedure.input(z.object({ limit: z.number().int().min(1).max(200).default(100) }).optional()).query(({ ctx, input }) => getApiRequestLogsByOrganization(ctx.orgId, input?.limit ?? 100)),
   }),
   audit: router({
     list: organizationManagerProcedure.input(z.object({ limit: z.number().int().min(1).max(200).default(100) }).optional()).query(async ({ ctx, input }) => {
@@ -406,14 +510,11 @@ export const appRouter = router({
       return [...filtered].sort((first, second) => second.createdAt.getTime() - first.createdAt.getTime());
     }),
     detail: organizationProcedure.input(z.object({ id: z.number().int().positive() })).query(({ ctx, input }) => getRecord(ctx.orgId, input.id) ?? null),
-    assess: organizationProcedure.input(riskInputSchema).mutation(async ({ ctx, input }) => {
-      const record = createRiskRecord(input as RiskInput);
-      getRecords(ctx.orgId).unshift(record);
-      await persistTransaction(ctx.orgId, asInsertTransaction(record));
-      await recordAuditEvent({ orgId: ctx.orgId, eventType: "case.assessment_created", actorId: ctx.user!.openId, actorName: ctx.user!.name ?? ctx.user!.email, subjectType: "case", subjectId: String(record.id), summary: `Created case ${record.reference} from a risk assessment.`, metadata: { riskLevel: record.riskLevel, casePriority: record.casePriority } });
-      void sendAlertNotifications(ctx.orgId, record).catch((error) => console.error("[FraudLens] Alert evaluation failed", error));
-      return record;
-    }),
+    assess: organizationProcedure.input(riskInputSchema).mutation(async ({ ctx, input }) => submitRiskAssessment(
+      ctx.orgId,
+      input as RiskInput,
+      { id: ctx.user!.openId, name: ctx.user!.name ?? ctx.user!.email ?? "Investigator", source: "dashboard" },
+    )),
     importCsv: organizationManagerProcedure.input(z.object({
       fileName: z.string().trim().min(5).max(255).refine((name) => name.toLowerCase().endsWith(".csv"), "Upload a .csv file."),
       contentBase64: z.string().min(4).max(1_500_000).regex(/^[A-Za-z0-9+/]+={0,2}$/, "The uploaded file is not valid base64 data."),

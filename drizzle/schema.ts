@@ -1,4 +1,4 @@
-import { boolean, int, mysqlEnum, mysqlTable, text, timestamp, uniqueIndex, varchar } from "drizzle-orm/mysql-core";
+import { boolean, index, int, mysqlEnum, mysqlTable, text, timestamp, uniqueIndex, varchar } from "drizzle-orm/mysql-core";
 
 export const users = mysqlTable("users", {
   id: int("id").autoincrement().primaryKey(),
@@ -127,6 +127,45 @@ export const outcomeFeedback = mysqlTable("outcomeFeedback", {
   recordedAt: timestamp("recordedAt").defaultNow().notNull(),
 }, (table) => [uniqueIndex("outcome_feedback_org_transaction_unique").on(table.orgId, table.transactionId)]);
 
+export const apiKeys = mysqlTable("apiKeys", {
+  id: int("id").autoincrement().primaryKey(),
+  /** Clerk organization identifier; keys are never valid outside their issuing workspace. */
+  orgId: varchar("orgId", { length: 64 }).notNull(),
+  name: varchar("name", { length: 80 }).notNull(),
+  /** Non-secret lookup prefix shown in the management interface. */
+  keyPrefix: varchar("keyPrefix", { length: 24 }).notNull(),
+  /** SHA-256 digest of the full key. The plaintext secret is never persisted. */
+  keyHash: varchar("keyHash", { length: 128 }).notNull(),
+  /** JSON array retained for forward-compatible, least-privilege API scopes. */
+  scopesJson: varchar("scopesJson", { length: 255 }).notNull(),
+  createdById: varchar("createdById", { length: 64 }),
+  createdByName: varchar("createdByName", { length: 160 }),
+  lastUsedAt: timestamp("lastUsedAt"),
+  expiresAt: timestamp("expiresAt"),
+  revokedAt: timestamp("revokedAt"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+}, (table) => [
+  uniqueIndex("api_keys_key_hash_unique").on(table.keyHash),
+  index("api_keys_org_created_idx").on(table.orgId, table.createdAt),
+]);
+
+export const apiRequestLogs = mysqlTable("apiRequestLogs", {
+  id: int("id").autoincrement().primaryKey(),
+  /** Organization and key identifier allow rate-limit and activity analysis without retaining request bodies. */
+  orgId: varchar("orgId", { length: 64 }).notNull(),
+  apiKeyId: int("apiKeyId"),
+  requestId: varchar("requestId", { length: 64 }).notNull(),
+  endpoint: varchar("endpoint", { length: 160 }).notNull(),
+  method: varchar("method", { length: 8 }).notNull(),
+  responseStatus: int("responseStatus").notNull(),
+  transactionReference: varchar("transactionReference", { length: 32 }),
+  riskLevel: mysqlEnum("riskLevel", ["low", "medium", "high"]),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+}, (table) => [
+  index("api_request_logs_org_created_idx").on(table.orgId, table.createdAt),
+  index("api_request_logs_key_created_idx").on(table.apiKeyId, table.createdAt),
+]);
+
 export const modelMetricSnapshots = mysqlTable("modelMetricSnapshots", {
   id: int("id").autoincrement().primaryKey(),
   /** Clerk organization identifier for workspace-level model metrics. */
@@ -163,3 +202,7 @@ export type NotificationPreferences = typeof notificationPreferences.$inferSelec
 export type InsertNotificationPreferences = typeof notificationPreferences.$inferInsert;
 export type OutcomeFeedback = typeof outcomeFeedback.$inferSelect;
 export type InsertOutcomeFeedback = typeof outcomeFeedback.$inferInsert;
+export type ApiKey = typeof apiKeys.$inferSelect;
+export type InsertApiKey = typeof apiKeys.$inferInsert;
+export type ApiRequestLog = typeof apiRequestLogs.$inferSelect;
+export type InsertApiRequestLog = typeof apiRequestLogs.$inferInsert;
