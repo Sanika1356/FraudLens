@@ -81,6 +81,14 @@ describe("Clerk-protected FraudLens APIs", () => {
     await expect(secondWorkspace.risk.detail({ id: assessed.id })).resolves.toBeNull();
   });
 
+  it("requires an active organization before exposing private evidence storage status", async () => {
+    const withoutWorkspace = appRouter.createCaller(createContext(createUser("analyst"), null));
+    const activeWorkspace = appRouter.createCaller(createContext(createUser("analyst"), "org_evidence_status"));
+
+    await expect(withoutWorkspace.risk.evidenceStorageStatus()).rejects.toMatchObject({ code: "UNAUTHORIZED" });
+    await expect(activeWorkspace.risk.evidenceStorageStatus()).resolves.toMatchObject({ provider: "Supabase Storage", maximumAttachmentBytes: 5 * 1024 * 1024 });
+  });
+
   it("rejects Team Access controls without an active organization", async () => {
     const caller = appRouter.createCaller(createContext(createUser("admin"), null));
 

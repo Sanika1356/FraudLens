@@ -1,48 +1,40 @@
 import type { Express } from "express";
-import { ENV } from "./env";
+import { getAuth } from "@clerk/express";
+import { getCaseEvidenceByStorageKey } from "../db";
+import { isSupabaseStorageConfigured, storageGetSignedUrl } from "../storage";
 
 export function registerStorageProxy(app: Express) {
   app.get("/storage/*", async (req, res) => {
-    const key = (req.params as Record<string, string>)[0];
-    if (!key) {
-      res.status(400).send("Missing storage key");
+    const auth = getAuth(req);
+    if (!auth.userId || !auth.orgId) {
+      res.status(401).send("An authenticated workspace session is required.");
       return;
     }
 
-    if (!ENV.forgeApiUrl || !ENV.forgeApiKey) {
-      res.status(500).send("Storage proxy not configured");
+    const key = (req.params as Record<string, string>)[0];
+    if (!key || !key.startsWith(`evidence/${encodeURIComponent(auth.orgId)}/`)) {
+      res.status(404).send("Evidence file not found.");
+      return;
+    }
+
+    if (!isSupabaseStorageConfigured()) {
+      res.status(503).send("Evidence storage is not configured.");
       return;
     }
 
     try {
-      const forgeUrl = new URL(
-        "v1/storage/presign/get",
-        ENV.forgeApiUrl.replace(/\/+$/, "") + "/",
-      );
-      forgeUrl.searchParams.set("path", key);
-
-      const forgeResp = await fetch(forgeUrl, {
-        headers: { Authorization: `Bearer ${ENV.forgeApiKey}` },
-      });
-
-      if (!forgeResp.ok) {
-        const body = await forgeResp.text().catch(() => "");
-        console.error(`[StorageProxy] forge error: ${forgeResp.status} ${body}`);
-        res.status(502).send("Storage backend error");
+      const evidence = await getCaseEvidenceByStorageKey(auth.orgId, key);
+      if (!evidence) {
+        res.status(404).send("Evidence file not found.");
         return;
       }
 
-      const { url } = (await forgeResp.json()) as { url: string };
-      if (!url) {
-        res.status(502).send("Empty signed URL from backend");
-        return;
-      }
-
+      const signedUrl = await storageGetSignedUrl(key, 60);
       res.set("Cache-Control", "no-store");
-      res.redirect(307, url);
-    } catch (err) {
-      console.error("[StorageProxy] failed:", err);
-      res.status(502).send("Storage proxy error");
+      res.redirect(307, signedUrl);
+    } catch (error) {
+      console.error("[StorageProxy] private evidence download failed", error);
+      res.status(502).send("Evidence storage is temporarily unavailable.");
     }
   });
 }

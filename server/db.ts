@@ -185,6 +185,21 @@ export async function addCaseEvidence(input: CaseEvidenceInput): Promise<void> {
   await db.insert(caseEvidence).values(input);
 }
 
+export async function getCaseEvidenceByStorageKey(orgId: string, storageKey: string): Promise<CaseEvidenceRecord | undefined> {
+  const db = await getDb();
+  if (!db) {
+    const evidence = Array.from(inMemoryEvidence.entries())
+      .filter(([key]) => key.startsWith(`${orgId}:`))
+      .flatMap(([, entries]) => entries);
+    return evidence.find((item) => item.storageKey === storageKey && item.evidenceType === "attachment");
+  }
+  const records = await db.select().from(caseEvidence)
+    .where(and(eq(caseEvidence.orgId, orgId), eq(caseEvidence.storageKey, storageKey), eq(caseEvidence.evidenceType, "attachment")))
+    .limit(1);
+  const record = records[0];
+  return record ? { ...record, orgId: record.orgId ?? orgId } : undefined;
+}
+
 export async function getCaseCollaboration(orgId: string, transactionId: number) {
   const db = await getDb();
   if (!db) {

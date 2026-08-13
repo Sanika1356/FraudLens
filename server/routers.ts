@@ -13,7 +13,8 @@ import {
   revokeOrganizationInvitation,
 } from "./adminManagement";
 import { addCaseComment, addCaseEvidence, getAuditEventsByOrganization, getCaseCollaboration, getDb, getTransactionReferencesByOrganization, persistTransaction, recordAuditEvent, replaceCaseTags } from "./db";
-import { storagePut } from "./storage";
+import { createEvidenceStorageKey, isSupabaseStorageConfigured, storageDelete, storagePut } from "./storage";
+import { decodeAndValidateEvidenceAttachment } from "./evidenceFiles";
 import { demoTransactions, driftDemo, RiskRecord } from "./demoData";
 import { createInvestigatorSummary } from "./investigatorSummary";
 import { modelHealth } from "./modelData";
@@ -381,6 +382,11 @@ export const appRouter = router({
       await recordAuditEvent({ orgId: ctx.orgId, eventType: "case.status_changed", actorId: ctx.user!.openId, actorName: ctx.user!.name ?? ctx.user!.email, subjectType: "case", subjectId: String(record.id), summary: `Changed ${record.reference} from ${previousStatus} to ${record.caseStatus}.`, metadata: { previousStatus, caseStatus: record.caseStatus, resolutionReasonCode: record.resolutionReasonCode, noteAdded: Boolean(record.caseNote) } });
       return record;
     }),
+    evidenceStorageStatus: organizationProcedure.query(() => ({
+      configured: isSupabaseStorageConfigured(),
+      provider: "Supabase Storage",
+      maximumAttachmentBytes: 5 * 1024 * 1024,
+    })),
     collaboration: organizationProcedure.input(z.object({ id: z.number().int().positive() })).query(async ({ ctx, input }) => {
       if (!getRecord(ctx.orgId, input.id)) throw new Error("Transaction not found");
       return getCaseCollaboration(ctx.orgId, input.id);
@@ -411,11 +417,14 @@ export const appRouter = router({
     uploadEvidenceAttachment: organizationProcedure.input(z.object({ id: z.number().int().positive(), label: z.string().trim().min(2).max(160), fileName: z.string().trim().min(1).max(255), mimeType: z.enum(["application/pdf", "text/plain", "text/csv", "image/png", "image/jpeg"]), contentBase64: z.string().min(4).max(7_000_000) })).mutation(async ({ ctx, input }) => {
       const record = getRecord(ctx.orgId, input.id);
       if (!record) throw new Error("Transaction not found");
-      const content = Buffer.from(input.contentBase64, "base64");
-      if (!content.length || content.length > 5 * 1024 * 1024) throw new Error("Evidence attachments must be between 1 byte and 5 MB.");
-      const safeFileName = input.fileName.replace(/[^a-zA-Z0-9._-]/g, "_");
-      const stored = await storagePut(`evidence/${ctx.orgId}/${record.id}/${safeFileName}`, content, input.mimeType);
-      await addCaseEvidence({ orgId: ctx.orgId, transactionId: record.id, label: input.label, evidenceType: "attachment", url: stored.url, storageKey: stored.key, fileName: input.fileName, mimeType: input.mimeType, addedById: ctx.user!.openId, addedByName: ctx.user!.name ?? ctx.user!.email });
+      const content = decodeAndValidateEvidenceAttachment(input);
+      const stored = await storagePut(createEvidenceStorageKey(ctx.orgId, record.id, input.fileName), content, input.mimeType);
+      try {
+        await addCaseEvidence({ orgId: ctx.orgId, transactionId: record.id, label: input.label, evidenceType: "attachment", url: stored.url, storageKey: stored.key, fileName: input.fileName, mimeType: input.mimeType, addedById: ctx.user!.openId, addedByName: ctx.user!.name ?? ctx.user!.email });
+      } catch (error) {
+        await storageDelete(stored.key).catch(() => undefined);
+        throw error;
+      }
       await recordAuditEvent({ orgId: ctx.orgId, eventType: "case.evidence_attachment_added", actorId: ctx.user!.openId, actorName: ctx.user!.name ?? ctx.user!.email, subjectType: "case", subjectId: String(record.id), summary: `Added an evidence attachment to ${record.reference}.`, metadata: { label: input.label, fileName: input.fileName, mimeType: input.mimeType } });
       return { success: true };
     }),

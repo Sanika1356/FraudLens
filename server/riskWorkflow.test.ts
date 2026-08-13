@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { demoTransactions } from "./demoData";
 import { parseCsvImport } from "./csvImport";
+import { decodeAndValidateEvidenceAttachment } from "./evidenceFiles";
+import { createEvidenceStorageKey } from "./storage";
 import { applyCaseUpdate, applyCaseWorkflowUpdate, caseUpdateSchema, caseWorkflowUpdateSchema, riskInputSchema } from "./routers";
 
 describe("FraudLens workflow validation", () => {
@@ -90,6 +92,21 @@ describe("FraudLens workflow validation", () => {
       expect.objectContaining({ row: 3, field: "deviceStatus" }),
       expect.objectContaining({ row: 3, field: "transactionHour" }),
     ]));
+  });
+
+  it("accepts permitted evidence formats and rejects content or extension spoofing", () => {
+    const pdf = Buffer.from("%PDF-1.7\nEvidence document", "utf8").toString("base64");
+    const valid = decodeAndValidateEvidenceAttachment({ fileName: "review.pdf", mimeType: "application/pdf", contentBase64: pdf });
+
+    expect(valid.toString("utf8")).toContain("%PDF-1.7");
+    expect(() => decodeAndValidateEvidenceAttachment({ fileName: "review.pdf", mimeType: "image/png", contentBase64: pdf })).toThrow("extension does not match");
+    expect(() => decodeAndValidateEvidenceAttachment({ fileName: "review.pdf", mimeType: "application/pdf", contentBase64: Buffer.from("not a PDF").toString("base64") })).toThrow("valid PDF header");
+    expect(() => decodeAndValidateEvidenceAttachment({ fileName: "notes.txt", mimeType: "text/plain", contentBase64: Buffer.from([0x61, 0x00, 0x62]).toString("base64") })).toThrow("null bytes");
+  });
+
+  it("creates segregated evidence keys without trusting caller file paths", () => {
+    expect(createEvidenceStorageKey("org_alpha", 42, "merchant invoice.pdf")).toMatch(/^evidence\/org_alpha\/42\/merchant-invoice\.pdf$/);
+    expect(createEvidenceStorageKey("org_beta", 42, "merchant invoice.pdf")).not.toContain("org_alpha");
   });
 
   it("reports required headers and malformed quoted CSV data precisely", () => {

@@ -7,7 +7,6 @@ This list contains only FraudLens work that remains to be implemented.
 
 ## Investigation Workflow and Data Operations
 
-- [ ] Add secure evidence-file storage for investigator attachments, imported files, and exported reports using Amazon S3 or Cloudflare R2.
 
 ## Alerts, Reporting, and Model Oversight
 

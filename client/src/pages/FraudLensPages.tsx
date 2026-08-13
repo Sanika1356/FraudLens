@@ -319,6 +319,7 @@ function CaseCollaborationPanel({ caseId }: { caseId: number }) {
   const [linkLabel, setLinkLabel] = useState("");
   const [linkUrl, setLinkUrl] = useState("");
   const collaboration = trpc.risk.collaboration.useQuery({ id: caseId }, { refetchInterval: 20_000 });
+  const evidenceStorage = trpc.risk.evidenceStorageStatus.useQuery();
   const refresh = async () => {
     await Promise.all([
       utils.risk.collaboration.invalidate({ id: caseId }),
@@ -345,6 +346,7 @@ function CaseCollaborationPanel({ caseId }: { caseId: number }) {
   const data = collaboration.data;
   const tags = data?.tags ?? [];
   const busy = addComment.isPending || setTags.isPending || addEvidenceLink.isPending || uploadEvidenceAttachment.isPending;
+  const storageReady = evidenceStorage.data?.configured === true;
   const addTag = () => {
     const tag = tagInput.trim().toLowerCase();
     if (!tag) return;
@@ -389,7 +391,8 @@ function CaseCollaborationPanel({ caseId }: { caseId: number }) {
       <Button size="sm" variant="outline" onClick={submitLink} disabled={busy} className="mt-2 border-white/10 bg-white/[0.03] text-slate-200 hover:bg-white/[0.08]"><Link2 className="mr-1.5 h-3.5 w-3.5" />Add evidence link</Button>
     </Panel>
     <Panel><div className="flex items-start gap-3"><Paperclip className="mt-0.5 h-5 w-5 text-amber-200" /><div><p className="text-sm font-semibold text-slate-100">Evidence attachments</p><p className="mt-1 text-xs leading-5 text-slate-500">Upload PDF, TXT, CSV, PNG, or JPEG files up to 5 MB.</p></div></div>
-      <label className="mt-4 flex cursor-pointer items-center justify-center rounded-lg border border-dashed border-cyan-300/25 bg-cyan-300/[0.035] px-4 py-4 text-sm font-medium text-cyan-200 transition hover:bg-cyan-300/[0.08] focus-within:ring-2 focus-within:ring-cyan-300"><Upload className="mr-2 h-4 w-4" />{uploadEvidenceAttachment.isPending ? "Uploading evidence…" : "Choose evidence file"}<input type="file" className="sr-only" accept=".pdf,.txt,.csv,.png,.jpg,.jpeg,application/pdf,text/plain,text/csv,image/png,image/jpeg" disabled={busy} onChange={uploadFile} /></label>
+      <div className={`mt-4 rounded-lg border px-3 py-2 text-xs leading-5 ${storageReady ? "border-emerald-300/20 bg-emerald-300/[0.05] text-emerald-100" : "border-amber-300/20 bg-amber-300/[0.05] text-amber-100"}`}>{storageReady ? "Private workspace storage is enabled. Downloads are authorized for the active organization and use short-lived links." : evidenceStorage.isLoading ? "Checking private evidence storage…" : "Private evidence storage is unavailable. Ask an administrator to verify server storage configuration."}</div>
+      <label className={`mt-4 flex items-center justify-center rounded-lg border border-dashed px-4 py-4 text-sm font-medium transition focus-within:ring-2 focus-within:ring-cyan-300 ${storageReady ? "cursor-pointer border-cyan-300/25 bg-cyan-300/[0.035] text-cyan-200 hover:bg-cyan-300/[0.08]" : "cursor-not-allowed border-white/10 bg-white/[0.02] text-slate-500"}`}><Upload className="mr-2 h-4 w-4" />{uploadEvidenceAttachment.isPending ? "Uploading evidence…" : "Choose evidence file"}<input type="file" className="sr-only" accept=".pdf,.txt,.csv,.png,.jpg,.jpeg,application/pdf,text/plain,text/csv,image/png,image/jpeg" disabled={busy || !storageReady} onChange={uploadFile} /></label>
       <div className="mt-4 space-y-2">{data?.evidence.filter((item) => item.evidenceType === "attachment").length ? data.evidence.filter((item) => item.evidenceType === "attachment").map((item) => <a key={item.id} href={item.url} target="_blank" rel="noreferrer" className="flex items-center justify-between gap-3 rounded-lg border border-white/[0.07] bg-[#07111e]/65 px-3 py-2.5 text-sm text-slate-300 transition hover:border-cyan-300/25 hover:text-cyan-200"><span className="min-w-0 truncate"><FileText className="mr-2 inline h-4 w-4 text-cyan-300" />{item.label}</span><span className="shrink-0 text-[11px] text-slate-600">{date(item.createdAt)}</span></a>) : <p className="text-xs text-slate-500">No files attached to this case.</p>}</div>
       <div className="mt-6"><p className="text-sm font-semibold text-slate-100">Saved evidence links</p><div className="mt-3 space-y-2">{data?.evidence.filter((item) => item.evidenceType === "link").length ? data.evidence.filter((item) => item.evidenceType === "link").map((item) => <a key={item.id} href={item.url} target="_blank" rel="noreferrer" className="flex items-center justify-between gap-3 rounded-lg border border-white/[0.07] bg-[#07111e]/65 px-3 py-2.5 text-sm text-slate-300 transition hover:border-cyan-300/25 hover:text-cyan-200"><span className="min-w-0 truncate"><Link2 className="mr-2 inline h-4 w-4 text-amber-200" />{item.label}</span><span className="shrink-0 text-[11px] text-slate-600">{date(item.createdAt)}</span></a>) : <p className="text-xs text-slate-500">No external evidence links saved.</p>}</div></div>
     </Panel>
