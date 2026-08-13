@@ -14,6 +14,8 @@ export const users = mysqlTable("users", {
 
 export const transactions = mysqlTable("transactions", {
   id: int("id").autoincrement().primaryKey(),
+  /** Clerk organization identifier. Nullable to preserve existing rows during migration. */
+  orgId: varchar("orgId", { length: 64 }),
   reference: varchar("reference", { length: 32 }).notNull().unique(),
   amountCents: int("amountCents").notNull(),
   merchantCategory: varchar("merchantCategory", { length: 80 }).notNull(),
@@ -37,6 +39,8 @@ export const transactions = mysqlTable("transactions", {
 
 export const caseNotes = mysqlTable("caseNotes", {
   id: int("id").autoincrement().primaryKey(),
+  /** Clerk organization identifier for tenant-safe case history. */
+  orgId: varchar("orgId", { length: 64 }),
   transactionId: int("transactionId").notNull(),
   note: text("note").notNull(),
   authorName: varchar("authorName", { length: 160 }).notNull(),
@@ -45,6 +49,8 @@ export const caseNotes = mysqlTable("caseNotes", {
 
 export const modelMetricSnapshots = mysqlTable("modelMetricSnapshots", {
   id: int("id").autoincrement().primaryKey(),
+  /** Clerk organization identifier for workspace-level model metrics. */
+  orgId: varchar("orgId", { length: 64 }),
   modelLabel: varchar("modelLabel", { length: 200 }).notNull(),
   datasetLabel: varchar("datasetLabel", { length: 250 }).notNull(),
   precisionMilli: int("precisionMilli").notNull(),
@@ -59,6 +65,8 @@ export const modelMetricSnapshots = mysqlTable("modelMetricSnapshots", {
 
 export const driftSnapshots = mysqlTable("driftSnapshots", {
   id: int("id").autoincrement().primaryKey(),
+  /** Clerk organization identifier for workspace-level drift snapshots. */
+  orgId: varchar("orgId", { length: 64 }),
   featureName: varchar("featureName", { length: 100 }).notNull(),
   baselineLabel: varchar("baselineLabel", { length: 120 }).notNull(),
   recentLabel: varchar("recentLabel", { length: 120 }).notNull(),

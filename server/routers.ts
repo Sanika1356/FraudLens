@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { systemRouter } from "./_core/systemRouter";
-import { managerProcedure, protectedProcedure, publicProcedure, router } from "./_core/trpc";
+import { organizationManagerProcedure, organizationProcedure, publicProcedure, router } from "./_core/trpc";
 import { getDb, persistTransaction } from "./db";
 import { demoTransactions, driftDemo, RiskRecord } from "./demoData";
 import { createInvestigatorSummary } from "./investigatorSummary";
@@ -23,11 +23,32 @@ export const caseUpdateSchema = z.object({
   note: z.string().trim().min(3).max(1000),
 });
 
-const records: RiskRecord[] = [...demoTransactions];
-let nextId = 1009;
+const recordsByOrganization = new Map<string, RiskRecord[]>();
+let nextId = Math.max(...demoTransactions.map((record) => record.id)) + 1;
 
-function getRecord(id: number) {
-  return records.find((record) => record.id === id);
+function cloneDemoTransaction(record: RiskRecord): RiskRecord {
+  return {
+    ...record,
+    createdAt: new Date(record.createdAt),
+    factors: [...record.factors],
+  };
+}
+
+/**
+ * Demo records are seeded separately for every active organization. In production,
+ * database reads must always be filtered by the same Clerk organization identifier.
+ */
+function getRecords(orgId: string) {
+  let records = recordsByOrganization.get(orgId);
+  if (!records) {
+    records = demoTransactions.map(cloneDemoTransaction);
+    recordsByOrganization.set(orgId, records);
+  }
+  return records;
+}
+
+function getRecord(orgId: string, id: number) {
+  return getRecords(orgId).find((record) => record.id === id);
 }
 
 export function applyCaseUpdate(record: RiskRecord, input: z.infer<typeof caseUpdateSchema>) {
@@ -68,7 +89,7 @@ function asInsertTransaction(record: RiskRecord) {
   } as const;
 }
 
-function buildOverview() {
+function buildOverview(records: RiskRecord[]) {
   const total = records.length;
   const highRisk = records.filter((record) => record.riskLevel === "high");
   const underReview = records.filter((record) => record.caseStatus === "under_review");
@@ -78,7 +99,7 @@ function buildOverview() {
     highRisk: highRisk.length,
     underReview: underReview.length,
     newlyFlagged: records.filter((record) => record.isNew && record.riskLevel === "high").length,
-    averageProbability: Math.round(records.reduce((totalValue, record) => totalValue + record.probability, 0) / total),
+    averageProbability: total === 0 ? 0 : Math.round(records.reduce((totalValue, record) => totalValue + record.probability, 0) / total),
     riskDistribution: RISK_LEVELS.map((riskLevel) => ({ riskLevel, count: records.filter((record) => record.riskLevel === riskLevel).length })),
     highRiskAlerts: highRisk.filter((record) => now - record.createdAt.getTime() < 1000 * 60 * 60 * 24).slice(0, 5),
     queue: [...records].sort((first, second) => second.probability - first.probability).slice(0, 6),
@@ -91,15 +112,15 @@ export const appRouter = router({
     me: publicProcedure.query((opts) => opts.ctx.user),
   }),
   risk: router({
-    overview: protectedProcedure.query(() => buildOverview()),
-    list: protectedProcedure.input(z.object({
+    overview: organizationProcedure.query(({ ctx }) => buildOverview(getRecords(ctx.orgId))),
+    list: organizationProcedure.input(z.object({
       riskLevel: z.enum(RISK_LEVELS).optional(),
       caseStatus: z.enum(CASE_STATUSES).optional(),
       merchantCategory: z.string().trim().max(80).optional(),
       dateFrom: z.date().optional(),
       dateTo: z.date().optional(),
-    }).optional()).query(({ input }) => {
-      const filtered = records.filter((record) => {
+    }).optional()).query(({ ctx, input }) => {
+      const filtered = getRecords(ctx.orgId).filter((record) => {
         if (input?.riskLevel && record.riskLevel !== input.riskLevel) return false;
         if (input?.caseStatus && record.caseStatus !== input.caseStatus) return false;
         if (input?.merchantCategory && record.merchantCategory.toLowerCase() !== input.merchantCategory.toLowerCase()) return false;
@@ -109,8 +130,8 @@ export const appRouter = router({
       });
       return [...filtered].sort((first, second) => second.createdAt.getTime() - first.createdAt.getTime());
     }),
-    detail: protectedProcedure.input(z.object({ id: z.number().int().positive() })).query(({ input }) => getRecord(input.id) ?? null),
-    assess: protectedProcedure.input(riskInputSchema).mutation(async ({ input }) => {
+    detail: organizationProcedure.input(z.object({ id: z.number().int().positive() })).query(({ ctx, input }) => getRecord(ctx.orgId, input.id) ?? null),
+    assess: organizationProcedure.input(riskInputSchema).mutation(async ({ ctx, input }) => {
       const decision = scoreTransaction(input as RiskInput);
       const record: RiskRecord = {
         id: nextId++,
@@ -125,19 +146,19 @@ export const appRouter = router({
         ...input,
         ...decision,
       };
-      records.unshift(record);
-      await persistTransaction(asInsertTransaction(record));
+      getRecords(ctx.orgId).unshift(record);
+      await persistTransaction(ctx.orgId, asInsertTransaction(record));
       return record;
     }),
-    updateCase: protectedProcedure.input(caseUpdateSchema).mutation(async ({ input }) => {
-      const record = getRecord(input.id);
+    updateCase: organizationProcedure.input(caseUpdateSchema).mutation(async ({ ctx, input }) => {
+      const record = getRecord(ctx.orgId, input.id);
       if (!record) throw new Error("Transaction not found");
       applyCaseUpdate(record, input);
-      await persistTransaction(asInsertTransaction(record));
+      await persistTransaction(ctx.orgId, asInsertTransaction(record));
       return record;
     }),
-    summarize: protectedProcedure.input(z.object({ id: z.number().int().positive() })).mutation(async ({ input }) => {
-      const record = getRecord(input.id);
+    summarize: organizationProcedure.input(z.object({ id: z.number().int().positive() })).mutation(async ({ ctx, input }) => {
+      const record = getRecord(ctx.orgId, input.id);
       if (!record) throw new Error("Transaction not found");
       const summary = await createInvestigatorSummary({
         riskLevel: record.riskLevel,
@@ -147,12 +168,12 @@ export const appRouter = router({
       });
       record.llmSummary = summary.summary;
       record.llmNextStep = summary.nextStep;
-      await persistTransaction(asInsertTransaction(record));
+      await persistTransaction(ctx.orgId, asInsertTransaction(record));
       return { record, source: summary.source };
     }),
-    modelHealth: managerProcedure.query(() => modelHealth),
-    drift: managerProcedure.query(() => driftDemo),
-    persistenceStatus: protectedProcedure.query(async () => ({ connected: Boolean(await getDb()) })),
+    modelHealth: organizationManagerProcedure.query(() => modelHealth),
+    drift: organizationManagerProcedure.query(() => driftDemo),
+    persistenceStatus: organizationProcedure.query(async () => ({ connected: Boolean(await getDb()) })),
   }),
 });
 

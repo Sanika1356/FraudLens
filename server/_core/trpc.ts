@@ -49,5 +49,27 @@ export const analystProcedure = roleProcedure("analyst", "manager", "admin");
 export const managerProcedure = roleProcedure("manager", "admin");
 export const adminProcedure = roleProcedure("admin");
 
+const activeOrganizationMiddleware = t.middleware(async ({ ctx, next }) => {
+  if (!ctx.orgId) {
+    throw new TRPCError({
+      code: "UNAUTHORIZED",
+      message: "Select an active organization workspace to access this data.",
+    });
+  }
+
+  return next({
+    ctx: {
+      orgId: ctx.orgId,
+      orgRole: ctx.orgRole,
+    },
+  });
+});
+
+/** Requires a signed-in FraudLens user with an active Clerk organization. */
+export const organizationProcedure = analystProcedure.use(activeOrganizationMiddleware);
+
+/** Requires a manager or administrator in an active Clerk organization. */
+export const organizationManagerProcedure = managerProcedure.use(activeOrganizationMiddleware);
+
 // Backward-compatible shorthand for any signed-in FraudLens user.
 export const protectedProcedure = analystProcedure;

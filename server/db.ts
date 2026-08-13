@@ -1,4 +1,4 @@
-import { eq } from "drizzle-orm";
+import { desc, eq } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
 import { InsertUser, InsertTransaction, transactions, users } from "../drizzle/schema";
 import { ENV } from "./_core/env";
@@ -35,21 +35,34 @@ export async function getUserByOpenId(openId: string) {
   return result[0];
 }
 
-export async function persistTransaction(record: InsertTransaction) {
+export async function getTransactionsByOrganization(orgId: string) {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(transactions)
+    .where(eq(transactions.orgId, orgId))
+    .orderBy(desc(transactions.createdAt));
+}
+
+export async function persistTransaction(
+  orgId: string,
+  record: Omit<InsertTransaction, "orgId">,
+) {
   const db = await getDb();
   if (!db) return;
+
+  const organizationRecord: InsertTransaction = { ...record, orgId };
   try {
-    await db.insert(transactions).values(record).onDuplicateKeyUpdate({
+    await db.insert(transactions).values(organizationRecord).onDuplicateKeyUpdate({
       set: {
-        riskLabel: record.riskLabel,
-        riskProbability: record.riskProbability,
-        factorJson: record.factorJson,
-        deterministicExplanation: record.deterministicExplanation,
-        llmSummary: record.llmSummary,
-        llmNextStep: record.llmNextStep,
-        caseStatus: record.caseStatus,
-        caseNote: record.caseNote,
-        isNew: record.isNew,
+        riskLabel: organizationRecord.riskLabel,
+        riskProbability: organizationRecord.riskProbability,
+        factorJson: organizationRecord.factorJson,
+        deterministicExplanation: organizationRecord.deterministicExplanation,
+        llmSummary: organizationRecord.llmSummary,
+        llmNextStep: organizationRecord.llmNextStep,
+        caseStatus: organizationRecord.caseStatus,
+        caseNote: organizationRecord.caseNote,
+        isNew: organizationRecord.isNew,
       },
     });
   } catch (error) {

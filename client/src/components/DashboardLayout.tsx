@@ -1,3 +1,4 @@
+import { OrganizationSwitcher } from "@clerk/react";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
@@ -117,6 +118,7 @@ function DashboardLayoutContent({ children, setSidebarWidth }: { children: React
             </div>
           </SidebarHeader>
           <SidebarContent className="gap-0 px-2 pt-3">
+            {!isCollapsed && <div className="px-3 pb-4"><OrganizationSwitcher afterCreateOrganizationUrl="/" afterSelectOrganizationUrl="/" /></div>}
             {!isCollapsed && <p className="px-3 pb-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500">Workspace</p>}
             <SidebarMenu>
               {availableMenuItems.map((item) => <SidebarMenuItem key={item.path}><SidebarMenuButton isActive={location === item.path} onClick={() => setLocation(item.path)} tooltip={item.label} className="h-10 rounded-lg px-3 text-slate-400 hover:bg-white/[0.07] hover:text-slate-100 data-[active=true]:bg-cyan-300/[0.11] data-[active=true]:text-cyan-200"><item.icon className="h-4 w-4" /><span>{item.label}</span></SidebarMenuButton></SidebarMenuItem>)}

@@ -4,7 +4,6 @@ This list contains only FraudLens work that remains to be implemented.
 
 ## Identity, Access, and Workspaces
 
-- [ ] Add organization workspaces so each company or fraud team has isolated users, transactions, cases, metrics, and configuration.
 - [ ] Add administrator user-management controls for role changes, team invitations, account deactivation, and session revocation.
 
 ## Investigation Workflow and Data Operations

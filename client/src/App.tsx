@@ -1,4 +1,4 @@
-import { RedirectToSignIn, SignIn, SignUp, useAuth } from "@clerk/react";
+import { OrganizationList, RedirectToSignIn, SignIn, SignUp, useAuth, useOrganization } from "@clerk/react";
 import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import {
@@ -11,7 +11,7 @@ import {
   TransactionsPage,
 } from "@/pages/FraudLensPages";
 import NotFound from "@/pages/NotFound";
-import { Route, Switch } from "wouter";
+import { Redirect, Route, Switch } from "wouter";
 import ErrorBoundary from "./components/ErrorBoundary";
 import { ThemeProvider } from "./contexts/ThemeContext";
 
@@ -31,15 +31,46 @@ function WorkspaceRouter() {
   );
 }
 
+function OrganizationSelectionScreen() {
+  const { isLoaded: authLoaded, isSignedIn } = useAuth();
+  const { isLoaded: organizationLoaded, organization } = useOrganization();
+
+  if (!authLoaded || !organizationLoaded) {
+    return <div className="min-h-screen bg-[#07111e]" aria-label="Loading organization workspaces" />;
+  }
+
+  if (!isSignedIn) {
+    return <RedirectToSignIn />;
+  }
+
+  if (organization) {
+    return <Redirect to="/" />;
+  }
+
+  return (
+    <main className="flex min-h-screen items-center justify-center bg-[#07111e] px-4 py-10">
+      <div className="w-full max-w-md">
+        <p className="mb-4 text-center text-xs font-semibold uppercase tracking-[0.22em] text-cyan-300">FraudLens workspace</p>
+        <OrganizationList afterCreateOrganizationUrl="/" afterSelectOrganizationUrl="/" />
+      </div>
+    </main>
+  );
+}
+
 function ProtectedWorkspace() {
   const { isLoaded, isSignedIn } = useAuth();
+  const { isLoaded: organizationLoaded, organization } = useOrganization();
 
-  if (!isLoaded) {
+  if (!isLoaded || !organizationLoaded) {
     return <div className="min-h-screen bg-[#07111e]" aria-label="Loading FraudLens" />;
   }
 
   if (!isSignedIn) {
     return <RedirectToSignIn />;
+  }
+
+  if (!organization) {
+    return <Redirect to="/select-organization" />;
   }
 
   return <WorkspaceRouter />;
@@ -66,6 +97,7 @@ export default function App() {
           <Switch>
             <Route path="/sign-in"><AuthenticationScreen mode="sign-in" /></Route>
             <Route path="/sign-up"><AuthenticationScreen mode="sign-up" /></Route>
+            <Route path="/select-organization"><OrganizationSelectionScreen /></Route>
             <Route><ProtectedWorkspace /></Route>
           </Switch>
         </TooltipProvider>

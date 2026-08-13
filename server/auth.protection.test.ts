@@ -4,9 +4,14 @@ import type { TrpcContext } from "./_core/context";
 
 type AuthenticatedUser = NonNullable<TrpcContext["user"]>;
 
-function createContext(user: AuthenticatedUser | null): TrpcContext {
+function createContext(
+  user: AuthenticatedUser | null,
+  orgId: string | null = "org_fraudlens_demo",
+): TrpcContext {
   return {
     user,
+    orgId,
+    orgRole: orgId ? "org:admin" : null,
     req: { headers: {} } as TrpcContext["req"],
     res: {} as TrpcContext["res"],
   };
@@ -35,6 +40,15 @@ describe("Clerk-protected FraudLens APIs", () => {
     });
   });
 
+  it("rejects a signed-in user who has not selected an active organization", async () => {
+    const caller = appRouter.createCaller(createContext(createUser("analyst"), null));
+
+    await expect(caller.risk.overview()).rejects.toMatchObject({
+      code: "UNAUTHORIZED",
+      message: "Select an active organization workspace to access this data.",
+    });
+  });
+
   it("permits an analyst to view transactions and update an investigation case", async () => {
     const analyst = createUser("analyst");
     const caller = appRouter.createCaller(createContext(analyst));
@@ -47,6 +61,24 @@ describe("Clerk-protected FraudLens APIs", () => {
       note: "Analyst access verification.",
     })).resolves.toMatchObject({ id: firstRecord!.id, caseStatus: "under_review" });
     await expect(caller.auth.me()).resolves.toEqual(analyst);
+  });
+
+  it("does not expose newly assessed transactions across organizations", async () => {
+    const firstWorkspace = appRouter.createCaller(createContext(createUser("analyst"), "org_first"));
+    const secondWorkspace = appRouter.createCaller(createContext(createUser("analyst"), "org_second"));
+
+    const assessed = await firstWorkspace.risk.assess({
+      amount: 775,
+      merchantCategory: "electronics",
+      transactionCountry: "US",
+      accountCountry: "US",
+      deviceStatus: "new",
+      transactionHour: 2,
+      recentTransactionCount: 5,
+    });
+
+    await expect(firstWorkspace.risk.detail({ id: assessed.id })).resolves.toMatchObject({ id: assessed.id });
+    await expect(secondWorkspace.risk.detail({ id: assessed.id })).resolves.toBeNull();
   });
 
   it("prevents an analyst from viewing model-monitoring data", async () => {

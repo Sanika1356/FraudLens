@@ -8,6 +8,10 @@ export type TrpcContext = {
   req: CreateExpressContextOptions["req"];
   res: CreateExpressContextOptions["res"];
   user: User | null;
+  /** The active Clerk organization for this request, if one has been selected. */
+  orgId: string | null;
+  /** The current user's Clerk membership role in the active organization. */
+  orgRole: string | null;
 };
 
 function createSessionUser(openId: string): User {
@@ -55,5 +59,7 @@ export async function createContext(
     req: opts.req,
     res: opts.res,
     user,
+    orgId: auth.orgId ?? null,
+    orgRole: auth.orgRole ?? null,
   };
 }
