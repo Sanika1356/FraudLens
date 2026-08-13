@@ -21,6 +21,7 @@ import { buildModelQualityReport, classifyOutcome } from "./outcomeFeedback";
 import { CASE_STATUSES, RISK_LEVELS, RiskInput, scoreTransaction } from "./riskEngine";
 import { parseCsvImport } from "./csvImport";
 import { ALERT_CHANNELS, createTestAlertTransaction, isAllowedSlackWebhookUrl, isAllowedTeamsWebhookUrl, sendAlertNotifications } from "./notifications";
+import { buildOperationalReport, reportFileName, reportToCsv, reportToText } from "./reports";
 
 export const riskInputSchema = z.object({
   amount: z.number().positive().max(1000000),
@@ -69,6 +70,18 @@ export const caseWorkflowUpdateSchema = z.object({
   assigneeId: z.string().trim().min(1).max(64).nullable(),
   casePriority: z.enum(CASE_PRIORITIES),
   dueAt: z.date().nullable(),
+});
+
+export const reportFiltersSchema = z.object({
+  riskLevel: z.enum(RISK_LEVELS).optional(),
+  caseStatus: z.enum(CASE_STATUSES).optional(),
+  assigneeId: z.string().trim().min(1).max(64).optional(),
+  dateFrom: z.date().optional(),
+  dateTo: z.date().optional(),
+}).superRefine((filters, context) => {
+  if (filters.dateFrom && filters.dateTo && filters.dateFrom > filters.dateTo) {
+    context.addIssue({ code: z.ZodIssueCode.custom, path: ["dateTo"], message: "The report end date must be on or after the start date." });
+  }
 });
 
 const recordsByOrganization = new Map<string, RiskRecord[]>();
@@ -329,6 +342,42 @@ export const appRouter = router({
       await revokeOrganizationInvitation({ orgId: ctx.orgId!, actorUserId: ctx.user!.openId, invitationId: input.invitationId });
       await recordAuditEvent({ orgId: ctx.orgId!, eventType: "administration.invitation_revoked", actorId: ctx.user!.openId, actorName: ctx.user!.name ?? ctx.user!.email, subjectType: "invitation", subjectId: input.invitationId, summary: "Revoked a pending workspace invitation." });
       return { invitationId: input.invitationId };
+    }),
+  }),
+  reports: router({
+    overview: organizationManagerProcedure.input(reportFiltersSchema.optional()).query(async ({ ctx, input }) => {
+      const feedback = await getOutcomeFeedbackByOrganization(ctx.orgId);
+      return buildOperationalReport(getRecords(ctx.orgId), feedback, input ?? {});
+    }),
+    downloadCsv: organizationManagerProcedure.input(reportFiltersSchema.optional()).mutation(async ({ ctx, input }) => {
+      const report = buildOperationalReport(getRecords(ctx.orgId), await getOutcomeFeedbackByOrganization(ctx.orgId), input ?? {});
+      const fileName = reportFileName("csv", report.generatedAt);
+      await recordAuditEvent({
+        orgId: ctx.orgId,
+        eventType: "report.csv_exported",
+        actorId: ctx.user!.openId,
+        actorName: ctx.user!.name ?? ctx.user!.email,
+        subjectType: "operational_report",
+        subjectId: fileName,
+        summary: `Exported a filtered operational CSV report (${report.summary.assessed} transaction${report.summary.assessed === 1 ? "" : "s"}).`,
+        metadata: { filters: input ?? {}, assessed: report.summary.assessed },
+      });
+      return { fileName, content: reportToCsv(report), contentType: "text/csv;charset=utf-8" };
+    }),
+    downloadSummary: organizationManagerProcedure.input(reportFiltersSchema.optional()).mutation(async ({ ctx, input }) => {
+      const report = buildOperationalReport(getRecords(ctx.orgId), await getOutcomeFeedbackByOrganization(ctx.orgId), input ?? {});
+      const fileName = reportFileName("txt", report.generatedAt);
+      await recordAuditEvent({
+        orgId: ctx.orgId,
+        eventType: "report.summary_downloaded",
+        actorId: ctx.user!.openId,
+        actorName: ctx.user!.name ?? ctx.user!.email,
+        subjectType: "operational_report",
+        subjectId: fileName,
+        summary: `Downloaded an operational report summary (${report.summary.assessed} transaction${report.summary.assessed === 1 ? "" : "s"}).`,
+        metadata: { filters: input ?? {}, assessed: report.summary.assessed },
+      });
+      return { fileName, content: reportToText(report), contentType: "text/plain;charset=utf-8" };
     }),
   }),
   risk: router({

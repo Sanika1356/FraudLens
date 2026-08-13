@@ -303,6 +303,32 @@ describe("Clerk-protected FraudLens APIs", () => {
     await expect(secondWorkspace.risk.modelHealth()).resolves.toMatchObject({ reviewed: 0 });
   });
 
+  it("requires manager access and keeps operational reports inside the active organization", async () => {
+    const analyst = appRouter.createCaller(createContext(createUser("analyst"), "org_report_access"));
+    const firstWorkspace = appRouter.createCaller(createContext(createUser("manager"), "org_report_first"));
+    const secondWorkspace = appRouter.createCaller(createContext(createUser("manager"), "org_report_second"));
+
+    await expect(analyst.reports.overview()).rejects.toMatchObject({ code: "FORBIDDEN" });
+    const assessed = await firstWorkspace.risk.assess({
+      amount: 1480,
+      merchantCategory: "electronics",
+      transactionCountry: "US",
+      accountCountry: "US",
+      deviceStatus: "new",
+      transactionHour: 2,
+      recentTransactionCount: 6,
+    });
+
+    const firstReport = await firstWorkspace.reports.overview();
+    const secondReport = await secondWorkspace.reports.overview();
+    const csv = await firstWorkspace.reports.downloadCsv();
+
+    expect(firstReport.rows.some((row) => row.reference === assessed.reference)).toBe(true);
+    expect(secondReport.rows.some((row) => row.reference === assessed.reference)).toBe(false);
+    expect(csv).toMatchObject({ fileName: expect.stringMatching(/^fraudlens-operational-report-.*\.csv$/), contentType: "text/csv;charset=utf-8" });
+    expect(csv.content).toContain(assessed.reference);
+  });
+
   it("permits managers and administrators to view model-monitoring data", async () => {
     const manager = appRouter.createCaller(createContext(createUser("manager")));
     const administrator = appRouter.createCaller(createContext(createUser("admin")));

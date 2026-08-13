@@ -608,3 +608,70 @@ export function NotificationSettingsPage() {
         <NotificationChannelCard title="Microsoft Teams" description="Post alerts through a Teams workflow webhook. Use a current Power Automate/Workflows URL for new configurations." enabled={form.teamsEnabled} onEnabledChange={(teamsEnabled) => updateForm({ teamsEnabled })} inputLabel="Teams workflow webhook URL" inputValue={form.teamsWebhookUrl} onInputChange={(teamsWebhookUrl) => updateForm({ teamsWebhookUrl })} placeholder="https://…logic.azure.com/…" testLabel="Test Teams" onTest={() => testAlert.mutate({ channel: "teams" })} isTesting={testAlert.isPending} />
       </div></div></Frame>;
 }
+
+function downloadReportFile(file: { fileName: string; content: string; contentType: string }) {
+  const url = URL.createObjectURL(new Blob([file.content], { type: file.contentType }));
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = file.fileName;
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 0);
+}
+
+export function ReportsPage() {
+  const { user } = useAuth();
+  const [riskLevel, setRiskLevel] = useState("");
+  const [caseStatus, setCaseStatus] = useState("");
+  const [assigneeId, setAssigneeId] = useState("");
+  const [dateFrom, setDateFrom] = useState(() => { const value = new Date(); value.setDate(value.getDate() - 6); return dateInput(value); });
+  const [dateTo, setDateTo] = useState(() => dateInput(new Date()));
+  const filters = {
+    riskLevel: (riskLevel || undefined) as RiskLevel | undefined,
+    caseStatus: (caseStatus || undefined) as CaseStatus | undefined,
+    assigneeId: assigneeId || undefined,
+    dateFrom: dateFrom ? new Date(`${dateFrom}T00:00:00`) : undefined,
+    dateTo: dateTo ? new Date(`${dateTo}T23:59:59`) : undefined,
+  };
+  const report = trpc.reports.overview.useQuery(filters);
+  const csvDownload = trpc.reports.downloadCsv.useMutation({
+    onSuccess: (file) => { downloadReportFile(file); toast.success("CSV report downloaded"); },
+    onError: () => toast.error("Unable to prepare the CSV report. Please try again."),
+  });
+  const summaryDownload = trpc.reports.downloadSummary.useMutation({
+    onSuccess: (file) => { downloadReportFile(file); toast.success("Operational summary downloaded"); },
+    onError: () => toast.error("Unable to prepare the summary report. Please try again."),
+  });
+
+  if (user?.role === "analyst") {
+    return <Frame><PageTitle eyebrow="Operational reporting" title="Reporting" /><QueryState state="error" label="Operational reports are available to managers and administrators only." /></Frame>;
+  }
+
+  const data = report.data;
+  const riskChart = data ? [
+    { name: "High", value: data.summary.highRisk, fill: "#fb7185" },
+    { name: "Medium", value: data.summary.mediumRisk, fill: "#fbbf24" },
+    { name: "Low", value: data.summary.lowRisk, fill: "#5eead4" },
+  ] : [];
+  const workloadChart = data?.workload.investigators.slice(0, 6).map((investigator) => ({ name: investigator.name.split(" ")[0], open: investigator.openCases, critical: investigator.criticalCases, overdue: investigator.overdueCases })) ?? [];
+  const assignees = data ? Array.from(new Map(data.rows.filter((row) => row.assigneeId).map((row) => [row.assigneeId!, row.assignee])).entries()) : [];
+  const dateRangeError = dateFrom && dateTo && dateFrom > dateTo;
+  const resetFilters = () => {
+    const from = new Date();
+    from.setDate(from.getDate() - 6);
+    setRiskLevel(""); setCaseStatus(""); setAssigneeId(""); setDateFrom(dateInput(from)); setDateTo(dateInput(new Date()));
+  };
+  const exportDisabled = !data || dateRangeError || csvDownload.isPending || summaryDownload.isPending;
+
+  return <Frame><PageTitle eyebrow="Operations intelligence" title="Reporting"><div className="flex flex-wrap gap-2"><Button variant="outline" onClick={() => summaryDownload.mutate(filters)} disabled={exportDisabled} className="border-white/10 bg-white/[0.035] text-slate-200 hover:bg-white/[0.08] hover:text-white"><FileText className="mr-2 h-4 w-4" />{summaryDownload.isPending ? "Preparing…" : "Download summary"}</Button><Button onClick={() => csvDownload.mutate(filters)} disabled={exportDisabled} className="bg-cyan-300 text-slate-950 hover:bg-cyan-200"><FileText className="mr-2 h-4 w-4" />{csvDownload.isPending ? "Preparing…" : "Export CSV"}</Button></div></PageTitle>
+    <Panel className="mb-6"><div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between"><div><p className="text-sm font-semibold text-slate-100">Filtered operational report</p><p className="mt-1 text-sm leading-6 text-slate-500">Review assessed activity, resolution outcomes, and workload in this workspace. The report structure is ready for weekly delivery after deployment.</p></div><Button type="button" variant="ghost" onClick={resetFilters} className="text-slate-400 hover:bg-white/[0.06] hover:text-slate-100">Reset to last 7 days</Button></div><div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-5"><select aria-label="Report risk level" value={riskLevel} onChange={(event) => setRiskLevel(event.target.value)} className="h-10 rounded-lg border border-white/10 bg-[#07111e] px-3 text-sm text-slate-200 outline-none focus:ring-2 focus:ring-cyan-300"><option value="">All risk levels</option><option value="high">High risk</option><option value="medium">Medium risk</option><option value="low">Low risk</option></select><select aria-label="Report case status" value={caseStatus} onChange={(event) => setCaseStatus(event.target.value)} className="h-10 rounded-lg border border-white/10 bg-[#07111e] px-3 text-sm text-slate-200 outline-none focus:ring-2 focus:ring-cyan-300"><option value="">All case statuses</option><option value="under_review">Under review</option><option value="confirmed_fraud">Confirmed fraud</option><option value="legitimate">Legitimate</option></select><select aria-label="Report assignee" value={assigneeId} onChange={(event) => setAssigneeId(event.target.value)} className="h-10 rounded-lg border border-white/10 bg-[#07111e] px-3 text-sm text-slate-200 outline-none focus:ring-2 focus:ring-cyan-300"><option value="">All investigators</option>{assignees.map(([id, name]) => <option key={id} value={id}>{name}</option>)}</select><Input type="date" value={dateFrom} onChange={(event) => setDateFrom(event.target.value)} aria-label="Report from date" className="border-white/10 bg-[#07111e] text-slate-200 focus-visible:ring-cyan-300" /><Input type="date" value={dateTo} onChange={(event) => setDateTo(event.target.value)} aria-label="Report to date" className="border-white/10 bg-[#07111e] text-slate-200 focus-visible:ring-cyan-300" /></div>{dateRangeError ? <p className="mt-3 text-sm text-rose-200">The report end date must be on or after the start date.</p> : <p className="mt-3 text-xs text-slate-500">Filters apply to transaction assessments created in the selected period. Download actions are recorded in the audit log.</p>}</Panel>
+    {report.isLoading ? <QueryState state="loading" label="Preparing operational reporting data…" /> : report.error || !data ? <QueryState state="error" label="Unable to load reporting data. Please refresh and try again." /> : <><div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">{[
+      ["Assessed activity", data.summary.assessed.toLocaleString(), `${money(data.summary.assessedAmount)} total amount`],
+      ["High-risk alerts", data.summary.highRisk.toLocaleString(), `${data.summary.openCases} open case${data.summary.openCases === 1 ? "" : "s"}`],
+      ["Resolution rate", data.summary.assessed ? `${Math.round((data.summary.resolvedCases / data.summary.assessed) * 100)}%` : "—", `${data.summary.resolvedCases} resolved case${data.summary.resolvedCases === 1 ? "" : "s"}`],
+      ["Review coverage", data.summary.assessed ? `${Math.round((data.summary.reviewedOutcomes / data.summary.assessed) * 100)}%` : "—", `${data.summary.reviewedOutcomes} confirmed outcome${data.summary.reviewedOutcomes === 1 ? "" : "s"}`],
+    ].map(([label, value, detail]) => <Panel key={String(label)}><p className="text-xs text-slate-500">{label}</p><p className="mt-3 text-3xl font-semibold text-slate-100">{value}</p><p className="mt-2 text-xs leading-5 text-slate-500">{detail}</p></Panel>)}</div>
+      <div className="mt-6 grid gap-6 xl:grid-cols-2"><Panel><p className="text-sm font-semibold text-slate-100">Risk distribution</p><p className="mt-1 text-xs text-slate-500">Filtered assessed transactions by model risk level</p><div className="mt-5 h-[250px]"><ResponsiveContainer width="100%" height="100%"><BarChart data={riskChart}><XAxis dataKey="name" tick={{ fill: "#7c8ba1", fontSize: 11 }} axisLine={false} tickLine={false}/><YAxis allowDecimals={false} tick={{ fill: "#7c8ba1", fontSize: 11 }} axisLine={false} tickLine={false}/><Tooltip contentStyle={{ background: "#0b1724", border: "1px solid rgba(255,255,255,.1)", borderRadius: 10, color: "#e2e8f0" }} cursor={{ fill: "rgba(255,255,255,.035)" }}/><Bar dataKey="value" radius={[6,6,0,0]}>{riskChart.map((entry) => <Cell key={entry.name} fill={entry.fill} />)}</Bar></BarChart></ResponsiveContainer></div></Panel><Panel><p className="text-sm font-semibold text-slate-100">Analyst workload</p><p className="mt-1 text-xs text-slate-500">Open, critical, and overdue active cases by investigator</p>{workloadChart.length ? <div className="mt-5 h-[250px]"><ResponsiveContainer width="100%" height="100%"><BarChart data={workloadChart}><XAxis dataKey="name" tick={{ fill: "#7c8ba1", fontSize: 11 }} axisLine={false} tickLine={false}/><YAxis allowDecimals={false} tick={{ fill: "#7c8ba1", fontSize: 11 }} axisLine={false} tickLine={false}/><Tooltip contentStyle={{ background: "#0b1724", border: "1px solid rgba(255,255,255,.1)", borderRadius: 10, color: "#e2e8f0" }} cursor={{ fill: "rgba(255,255,255,.035)" }}/><Bar dataKey="open" name="Open" stackId="workload" fill="#67e8f9" radius={[4,4,0,0]} /><Bar dataKey="critical" name="Critical" stackId="workload" fill="#fb7185" /><Bar dataKey="overdue" name="Overdue" stackId="workload" fill="#fbbf24" /></BarChart></ResponsiveContainer></div> : <p className="py-20 text-center text-sm text-slate-500">Assign an active case to begin tracking investigator workload.</p>}</Panel></div>
+      <div className="mt-6 grid gap-6 xl:grid-cols-[1.2fr_0.8fr]"><Panel><div className="flex items-start justify-between gap-4"><div><p className="text-sm font-semibold text-slate-100">Filtered activity</p><p className="mt-1 text-xs text-slate-500">Most recent assessed transactions in the selected report</p></div><p className="text-xs text-slate-500">Showing {Math.min(data.rows.length, 12)} of {data.rows.length}</p></div>{data.rows.length ? <div className="mt-5 overflow-x-auto"><table className="w-full min-w-[720px] text-left"><thead><tr className="border-b border-white/[0.07] text-[10px] uppercase tracking-[0.13em] text-slate-500"><th className="pb-3 font-medium">Transaction</th><th className="pb-3 font-medium">Risk</th><th className="pb-3 font-medium">Case result</th><th className="pb-3 font-medium">Investigator</th><th className="pb-3 text-right font-medium">Amount</th></tr></thead><tbody>{data.rows.slice(0, 12).map((row) => <tr key={row.reference} className="border-b border-white/[0.045] last:border-0"><td className="py-3.5"><p className="text-sm font-medium text-slate-200">{row.merchant}</p><p className="mt-1 font-mono text-[11px] text-slate-500">{row.reference} · {date(row.assessedAt)}</p></td><td className="py-3.5"><RiskPill level={row.riskLevel} /><p className="mt-1 text-xs text-slate-500">{row.riskScore}% score</p></td><td className="py-3.5"><StatusPill status={row.caseStatus} /><p className="mt-1 text-xs text-slate-500">{row.resolutionReason?.replaceAll("_", " ") || "Not resolved"}</p></td><td className="py-3.5 text-sm text-slate-300">{row.assignee}</td><td className="py-3.5 text-right text-sm font-medium text-slate-200">{money(row.amount)}</td></tr>)}</tbody></table></div> : <p className="py-16 text-center text-sm text-slate-500">No transactions match the active report filters.</p>}</Panel><Panel><p className="text-sm font-semibold text-slate-100">Resolution and queue summary</p><p className="mt-1 text-xs text-slate-500">Case outcomes and investigator workload in the selected activity</p><div className="mt-5 space-y-3">{[["Confirmed fraud", data.summary.confirmedFraud, "text-rose-200"], ["Confirmed legitimate", data.summary.legitimate, "text-emerald-200"], ["Overdue open cases", data.summary.overdueCases, "text-amber-200"], ["Unassigned active cases", data.workload.unassigned, "text-cyan-200"]].map(([label, value, tone]) => <div key={String(label)} className="flex items-center justify-between rounded-xl border border-white/[0.06] bg-[#07111e] px-4 py-3"><span className="text-sm text-slate-400">{label}</span><span className={`text-xl font-semibold ${tone}`}>{value}</span></div>)}</div><div className="mt-6 border-t border-white/[0.06] pt-5"><p className="text-xs font-semibold uppercase tracking-[0.13em] text-slate-500">Top resolution reasons</p>{data.resolutionReasons.length ? <div className="mt-3 space-y-2.5">{data.resolutionReasons.slice(0, 5).map((item) => <div key={item.reason} className="flex items-center justify-between gap-4 text-sm"><span className="capitalize text-slate-300">{item.reason.replaceAll("_", " ")}</span><span className="font-medium text-slate-100">{item.count}</span></div>)}</div> : <p className="mt-3 text-sm leading-6 text-slate-500">Resolution reasons will appear after investigators close cases in the selected period.</p>}</div></Panel></div></>}</Frame>;
+}

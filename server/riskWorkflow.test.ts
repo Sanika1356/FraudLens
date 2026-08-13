@@ -3,9 +3,10 @@ import { demoTransactions } from "./demoData";
 import { parseCsvImport } from "./csvImport";
 import { decodeAndValidateEvidenceAttachment } from "./evidenceFiles";
 import { createEvidenceStorageKey } from "./storage";
-import { applyCaseUpdate, applyCaseWorkflowUpdate, caseUpdateSchema, caseWorkflowUpdateSchema, notificationPreferencesSchema, riskInputSchema } from "./routers";
+import { applyCaseUpdate, applyCaseWorkflowUpdate, caseUpdateSchema, caseWorkflowUpdateSchema, notificationPreferencesSchema, reportFiltersSchema, riskInputSchema } from "./routers";
 import { shouldSendHighRiskAlert } from "./notifications";
 import { buildModelQualityReport, classifyOutcome } from "./outcomeFeedback";
+import { buildOperationalReport, reportToCsv, reportToText } from "./reports";
 
 describe("FraudLens workflow validation", () => {
   it("rejects unsafe manual assessment inputs before scoring", () => {
@@ -169,6 +170,38 @@ describe("FraudLens workflow validation", () => {
   it("reports unavailable rates when no confirmed outcomes exist", () => {
     const report = buildModelQualityReport([]);
     expect(report).toMatchObject({ reviewed: 0, precisionMilli: null, recallMilli: null, f1Milli: null, accuracyMilli: null });
+  });
+
+  it("derives filtered operational metrics, analyst workload, and downloadable report content", () => {
+    const first = demoTransactions[0];
+    const second = demoTransactions[1];
+    if (!first || !second) throw new Error("Expected demo records");
+    const records = [
+      { ...first, createdAt: new Date("2026-08-12T09:00:00.000Z"), riskLevel: "high" as const, caseStatus: "under_review" as const, assigneeId: "user_a", assigneeName: "Alex Analyst", casePriority: "critical" as const, dueAt: new Date("2026-08-12T12:00:00.000Z") },
+      { ...second, createdAt: new Date("2026-08-11T09:00:00.000Z"), riskLevel: "low" as const, caseStatus: "legitimate" as const, assigneeId: null, assigneeName: null, casePriority: "standard" as const, dueAt: null, resolutionReasonCode: "customer_verified" },
+    ];
+
+    const report = buildOperationalReport(records, [], { dateFrom: new Date("2026-08-12T00:00:00.000Z"), dateTo: new Date("2026-08-12T23:59:59.000Z") }, new Date("2026-08-13T10:00:00.000Z"));
+
+    expect(report.summary).toMatchObject({ assessed: 1, highRisk: 1, openCases: 1, resolvedCases: 0, overdueCases: 1, assessedAmount: first.amount });
+    expect(report.workload).toEqual({ unassigned: 0, investigators: [{ name: "Alex Analyst", openCases: 1, criticalCases: 1, overdueCases: 1 }] });
+    expect(report.rows).toHaveLength(1);
+    expect(reportToCsv(report)).toContain(`reference,assessedAt,merchant`);
+    expect(reportToText(report)).toContain("FraudLens operational report");
+  });
+
+  it("neutralizes spreadsheet formulas in CSV report fields", () => {
+    const first = demoTransactions[0];
+    if (!first) throw new Error("Expected demo record");
+    const report = buildOperationalReport([{ ...first, merchantName: "=HYPERLINK(\"https://unsafe.example\")" }], [], {});
+
+    expect(reportToCsv(report)).toContain("'=HYPERLINK");
+    expect(reportToCsv(report)).not.toContain(",=HYPERLINK");
+  });
+
+  it("validates reporting date ranges before generating exports", () => {
+    expect(reportFiltersSchema.safeParse({ dateFrom: new Date("2026-08-13"), dateTo: new Date("2026-08-12") }).success).toBe(false);
+    expect(reportFiltersSchema.safeParse({ riskLevel: "high", caseStatus: "under_review" }).success).toBe(true);
   });
 
   it("reports required headers and malformed quoted CSV data precisely", () => {
