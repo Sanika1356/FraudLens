@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { demoTransactions } from "./demoData";
+import { parseCsvImport } from "./csvImport";
 import { applyCaseUpdate, applyCaseWorkflowUpdate, caseUpdateSchema, caseWorkflowUpdateSchema, riskInputSchema } from "./routers";
 
 describe("FraudLens workflow validation", () => {
@@ -73,5 +74,29 @@ describe("FraudLens workflow validation", () => {
 
     expect(updated).toMatchObject({ assigneeId: "user_analyst_42", assigneeName: "Alex Analyst", casePriority: "critical" });
     expect(updated.dueAt?.toISOString()).toBe(dueAt.toISOString());
+  });
+
+  it("parses valid CSV rows and reports malformed row fields without discarding valid rows", () => {
+    const parsed = parseCsvImport([
+      "reference,amount,merchantCategory,transactionCountry,accountCountry,deviceStatus,transactionHour,recentTransactionCount",
+      "FRAUD-CSV-001,279.99,electronics,US,US,new,2,4",
+      "FRAUD-CSV-002,not-a-number,electronics,US,US,unknown,29,55",
+    ].join("\n"));
+
+    expect(parsed.totalRows).toBe(2);
+    expect(parsed.candidates).toEqual([expect.objectContaining({ row: 2, reference: "FRAUD-CSV-001", input: expect.objectContaining({ amount: 279.99, deviceStatus: "new" }) })]);
+    expect(parsed.errors).toEqual(expect.arrayContaining([
+      expect.objectContaining({ row: 3, field: "amount" }),
+      expect.objectContaining({ row: 3, field: "deviceStatus" }),
+      expect.objectContaining({ row: 3, field: "transactionHour" }),
+    ]));
+  });
+
+  it("reports required headers and malformed quoted CSV data precisely", () => {
+    const missingHeader = parseCsvImport("reference,amount\nFRAUD-CSV-003,20");
+    const unclosedQuote = parseCsvImport("reference,amount,merchantCategory,transactionCountry,accountCountry,deviceStatus,transactionHour,recentTransactionCount\n\"FRAUD-CSV-004,20");
+
+    expect(missingHeader.errors).toEqual(expect.arrayContaining([expect.objectContaining({ row: 1, field: "merchantCategory" })]));
+    expect(unclosedQuote.errors).toEqual([expect.objectContaining({ row: 1, field: "file", message: "The CSV contains an unclosed quoted value." })]);
   });
 });

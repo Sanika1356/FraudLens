@@ -12,12 +12,13 @@ import {
   revokeMemberSessions,
   revokeOrganizationInvitation,
 } from "./adminManagement";
-import { addCaseComment, addCaseEvidence, getAuditEventsByOrganization, getCaseCollaboration, getDb, persistTransaction, recordAuditEvent, replaceCaseTags } from "./db";
+import { addCaseComment, addCaseEvidence, getAuditEventsByOrganization, getCaseCollaboration, getDb, getTransactionReferencesByOrganization, persistTransaction, recordAuditEvent, replaceCaseTags } from "./db";
 import { storagePut } from "./storage";
 import { demoTransactions, driftDemo, RiskRecord } from "./demoData";
 import { createInvestigatorSummary } from "./investigatorSummary";
 import { modelHealth } from "./modelData";
 import { CASE_STATUSES, RISK_LEVELS, RiskInput, scoreTransaction } from "./riskEngine";
+import { parseCsvImport } from "./csvImport";
 
 export const riskInputSchema = z.object({
   amount: z.number().positive().max(1000000),
@@ -111,6 +112,28 @@ function createReference() {
 
 function merchantName(category: string) {
   return category.trim().split(/\s+/).map((part) => part[0]?.toUpperCase() + part.slice(1).toLowerCase()).join(" ");
+}
+
+function createRiskRecord(input: RiskInput, reference = createReference()): RiskRecord {
+  const decision = scoreTransaction(input);
+  return {
+    id: nextId++,
+    reference,
+    merchantName: merchantName(input.merchantCategory),
+    createdAt: new Date(),
+    caseStatus: "under_review",
+    caseNote: null,
+    resolutionReasonCode: null,
+    assigneeId: null,
+    assigneeName: null,
+    casePriority: decision.riskLevel === "high" ? "critical" : decision.riskLevel === "medium" ? "high" : "standard",
+    dueAt: decision.riskLevel === "high" ? new Date(Date.now() + 4 * 60 * 60 * 1000) : decision.riskLevel === "medium" ? new Date(Date.now() + 24 * 60 * 60 * 1000) : null,
+    isNew: decision.riskLevel === "high",
+    llmSummary: null,
+    llmNextStep: null,
+    ...input,
+    ...decision,
+  };
 }
 
 function asInsertTransaction(record: RiskRecord) {
@@ -277,29 +300,75 @@ export const appRouter = router({
     }),
     detail: organizationProcedure.input(z.object({ id: z.number().int().positive() })).query(({ ctx, input }) => getRecord(ctx.orgId, input.id) ?? null),
     assess: organizationProcedure.input(riskInputSchema).mutation(async ({ ctx, input }) => {
-      const decision = scoreTransaction(input as RiskInput);
-      const record: RiskRecord = {
-        id: nextId++,
-        reference: createReference(),
-        merchantName: merchantName(input.merchantCategory),
-        createdAt: new Date(),
-        caseStatus: "under_review",
-        caseNote: null,
-        resolutionReasonCode: null,
-        assigneeId: null,
-        assigneeName: null,
-        casePriority: decision.riskLevel === "high" ? "critical" : decision.riskLevel === "medium" ? "high" : "standard",
-        dueAt: decision.riskLevel === "high" ? new Date(Date.now() + 4 * 60 * 60 * 1000) : decision.riskLevel === "medium" ? new Date(Date.now() + 24 * 60 * 60 * 1000) : null,
-        isNew: decision.riskLevel === "high",
-        llmSummary: null,
-        llmNextStep: null,
-        ...input,
-        ...decision,
-      };
+      const record = createRiskRecord(input as RiskInput);
       getRecords(ctx.orgId).unshift(record);
       await persistTransaction(ctx.orgId, asInsertTransaction(record));
       await recordAuditEvent({ orgId: ctx.orgId, eventType: "case.assessment_created", actorId: ctx.user!.openId, actorName: ctx.user!.name ?? ctx.user!.email, subjectType: "case", subjectId: String(record.id), summary: `Created case ${record.reference} from a risk assessment.`, metadata: { riskLevel: record.riskLevel, casePriority: record.casePriority } });
       return record;
+    }),
+    importCsv: organizationManagerProcedure.input(z.object({
+      fileName: z.string().trim().min(5).max(255).refine((name) => name.toLowerCase().endsWith(".csv"), "Upload a .csv file."),
+      contentBase64: z.string().min(4).max(1_500_000).regex(/^[A-Za-z0-9+/]+={0,2}$/, "The uploaded file is not valid base64 data."),
+    })).mutation(async ({ ctx, input }) => {
+      let file: Buffer;
+      let content: string;
+      try {
+        file = Buffer.from(input.contentBase64, "base64");
+        if (!file.length || file.length > 1_000_000) throw new Error("CSV files must be between 1 byte and 1 MB.");
+        content = new TextDecoder("utf-8", { fatal: true }).decode(file);
+      } catch (error) {
+        throw new Error(error instanceof Error ? error.message : "The CSV could not be decoded as UTF-8 text.");
+      }
+
+      const parsed = parseCsvImport(content);
+      const errors = [...parsed.errors];
+      const existingReferences = new Set(getRecords(ctx.orgId).map((record) => record.reference.toUpperCase()));
+      Array.from(await getTransactionReferencesByOrganization(ctx.orgId)).forEach((reference) => existingReferences.add(reference));
+      const acceptedReferences = new Set<string>();
+      const importable = [] as typeof parsed.candidates;
+      for (const candidate of parsed.candidates) {
+        if (existingReferences.has(candidate.reference)) {
+          errors.push({ row: candidate.row, field: "reference", message: "A transaction with this reference already exists in this workspace." });
+        } else if (acceptedReferences.has(candidate.reference)) {
+          errors.push({ row: candidate.row, field: "reference", message: "This reference is duplicated within the uploaded file." });
+        } else {
+          acceptedReferences.add(candidate.reference);
+          importable.push(candidate);
+        }
+      }
+
+      const records = importable.map((candidate) => createRiskRecord(candidate.input, candidate.reference));
+      const workspaceRecords = getRecords(ctx.orgId);
+      for (const record of records) {
+        workspaceRecords.unshift(record);
+        await persistTransaction(ctx.orgId, asInsertTransaction(record));
+      }
+      const riskDistribution = {
+        high: records.filter((record) => record.riskLevel === "high").length,
+        medium: records.filter((record) => record.riskLevel === "medium").length,
+        low: records.filter((record) => record.riskLevel === "low").length,
+      };
+      const invalidRows = new Set(errors.filter((error) => error.row > 1).map((error) => error.row)).size;
+      await recordAuditEvent({
+        orgId: ctx.orgId,
+        eventType: "transaction.csv_imported",
+        actorId: ctx.user!.openId,
+        actorName: ctx.user!.name ?? ctx.user!.email,
+        subjectType: "transaction_import",
+        subjectId: input.fileName,
+        summary: `Imported ${records.length} transaction${records.length === 1 ? "" : "s"} from ${input.fileName}.`,
+        metadata: { fileName: input.fileName, totalRows: parsed.totalRows, imported: records.length, invalidRows, highRisk: riskDistribution.high, mediumRisk: riskDistribution.medium, lowRisk: riskDistribution.low },
+      });
+      return {
+        fileName: input.fileName,
+        totalRows: parsed.totalRows,
+        imported: records.length,
+        invalidRows,
+        duplicates: errors.filter((error) => error.message.toLowerCase().includes("duplicat") || error.message.toLowerCase().includes("already exists")).length,
+        riskDistribution,
+        errors: errors.slice(0, 100),
+        importedRecords: records.map((record) => ({ id: record.id, reference: record.reference, riskLevel: record.riskLevel, probability: record.probability })),
+      };
     }),
     updateCase: organizationProcedure.input(caseUpdateSchema).mutation(async ({ ctx, input }) => {
       const record = getRecord(ctx.orgId, input.id);

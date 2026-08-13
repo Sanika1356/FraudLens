@@ -1,0 +1,2 @@
+ALTER TABLE `transactions` DROP INDEX `transactions_reference_unique`;--> statement-breakpoint
+ALTER TABLE `transactions` ADD CONSTRAINT `transactions_org_reference_unique` UNIQUE(`orgId`,`reference`);

@@ -10,6 +10,7 @@ import {
   DriftPage,
   ModelHealthPage,
   TransactionDetailPage,
+  TransactionImportPage,
   TransactionsPage,
 } from "@/pages/FraudLensPages";
 import NotFound from "@/pages/NotFound";
@@ -24,6 +25,7 @@ function WorkspaceRouter() {
       <Route path="/transactions" component={TransactionsPage} />
       <Route path="/transactions/:id" component={TransactionDetailPage} />
       <Route path="/assess" component={AssessmentPage} />
+      <Route path="/import" component={TransactionImportPage} />
       <Route path="/casework" component={CaseQueuesPage} />
       <Route path="/model-health" component={ModelHealthPage} />
       <Route path="/drift" component={DriftPage} />

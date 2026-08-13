@@ -101,6 +101,14 @@ export async function getTransactionsByOrganization(orgId: string) {
     .orderBy(desc(transactions.createdAt));
 }
 
+export async function getTransactionReferencesByOrganization(orgId: string): Promise<Set<string>> {
+  const db = await getDb();
+  if (!db) return new Set();
+  const rows = await db.select({ reference: transactions.reference }).from(transactions)
+    .where(eq(transactions.orgId, orgId));
+  return new Set(rows.map((row) => row.reference.trim().toUpperCase()));
+}
+
 export async function recordAuditEvent(input: AuditEventInput): Promise<void> {
   const metadataJson = JSON.stringify(input.metadata ?? {});
   const db = await getDb();

@@ -1,4 +1,4 @@
-import { boolean, int, mysqlEnum, mysqlTable, text, timestamp, varchar } from "drizzle-orm/mysql-core";
+import { boolean, int, mysqlEnum, mysqlTable, text, timestamp, uniqueIndex, varchar } from "drizzle-orm/mysql-core";
 
 export const users = mysqlTable("users", {
   id: int("id").autoincrement().primaryKey(),
@@ -16,7 +16,7 @@ export const transactions = mysqlTable("transactions", {
   id: int("id").autoincrement().primaryKey(),
   /** Clerk organization identifier. Nullable to preserve existing rows during migration. */
   orgId: varchar("orgId", { length: 64 }),
-  reference: varchar("reference", { length: 32 }).notNull().unique(),
+  reference: varchar("reference", { length: 32 }).notNull(),
   amountCents: int("amountCents").notNull(),
   merchantCategory: varchar("merchantCategory", { length: 80 }).notNull(),
   transactionCountry: varchar("transactionCountry", { length: 3 }).notNull(),
@@ -42,7 +42,7 @@ export const transactions = mysqlTable("transactions", {
   isNew: boolean("isNew").default(true).notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
-});
+}, (table) => [uniqueIndex("transactions_org_reference_unique").on(table.orgId, table.reference)]);
 
 export const caseNotes = mysqlTable("caseNotes", {
   id: int("id").autoincrement().primaryKey(),

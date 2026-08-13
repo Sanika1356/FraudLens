@@ -7,7 +7,6 @@ This list contains only FraudLens work that remains to be implemented.
 
 ## Investigation Workflow and Data Operations
 
-- [ ] Build CSV transaction import with schema validation, row-level error reporting, import summaries, duplicate detection, and bulk risk scoring.
 - [ ] Add secure evidence-file storage for investigator attachments, imported files, and exported reports using Amazon S3 or Cloudflare R2.
 
 ## Alerts, Reporting, and Model Oversight

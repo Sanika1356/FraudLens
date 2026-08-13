@@ -398,3 +398,76 @@ function CaseCollaborationPanel({ caseId }: { caseId: number }) {
     </Panel>
   </div>;
 }
+
+
+export function TransactionImportPage() {
+  const { user } = useAuth();
+  const [, setLocation] = useLocation();
+  const utils = trpc.useUtils();
+  const [file, setFile] = useState<File | null>(null);
+  const [fileError, setFileError] = useState<string | null>(null);
+  const [result, setResult] = useState<any>(null);
+  const importCsv = trpc.risk.importCsv.useMutation({
+    onSuccess: (response) => {
+      setResult(response);
+      utils.risk.overview.invalidate();
+      utils.risk.list.invalidate();
+      if (response.imported) {
+        toast.success("Transaction import complete", { description: `${response.imported} transaction${response.imported === 1 ? "" : "s"} scored and added to this workspace.` });
+      } else {
+        toast.warning("No transactions were imported", { description: "Review the row-level errors and upload a corrected CSV." });
+      }
+    },
+    onError: (error) => toast.error("Import failed", { description: error.message }),
+  });
+
+  const chooseFile = (selected: File | null) => {
+    setResult(null);
+    if (!selected) { setFile(null); setFileError(null); return; }
+    if (!selected.name.toLowerCase().endsWith(".csv")) { setFile(null); setFileError("Choose a CSV file with a .csv extension."); return; }
+    if (selected.size === 0 || selected.size > 1_000_000) { setFile(null); setFileError("CSV files must be between 1 byte and 1 MB."); return; }
+    setFile(selected);
+    setFileError(null);
+  };
+
+  const readAsBase64 = (selected: File) => new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error("The selected file could not be read."));
+    reader.onload = () => {
+      const dataUrl = reader.result;
+      if (typeof dataUrl !== "string" || !dataUrl.includes(",")) { reject(new Error("The selected file could not be encoded.")); return; }
+      resolve(dataUrl.slice(dataUrl.indexOf(",") + 1));
+    };
+    reader.readAsDataURL(selected);
+  });
+
+  const upload = async () => {
+    if (!file) { setFileError("Choose a CSV file before importing."); return; }
+    try {
+      const contentBase64 = await readAsBase64(file);
+      importCsv.mutate({ fileName: file.name, contentBase64 });
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "The selected file could not be read.");
+    }
+  };
+
+  const downloadTemplate = () => {
+    const template = "reference,amount,merchantCategory,transactionCountry,accountCountry,deviceStatus,transactionHour,recentTransactionCount\nFRD-IMPORT-001,279.99,electronics,US,US,new,2,4\n";
+    const objectUrl = URL.createObjectURL(new Blob([template], { type: "text/csv;charset=utf-8" }));
+    const anchor = document.createElement("a");
+    anchor.href = objectUrl;
+    anchor.download = "fraudlens-transaction-template.csv";
+    anchor.click();
+    URL.revokeObjectURL(objectUrl);
+  };
+
+  if (user?.role === "analyst") {
+    return <Frame><PageTitle eyebrow="Transaction import" title="Manager access required" /><QueryState state="error" label="Only managers and administrators can import transaction batches." /></Frame>;
+  }
+
+  return <Frame><PageTitle eyebrow="Bulk scoring" title="Import transactions"><div className="flex flex-wrap gap-2"><Button variant="outline" onClick={downloadTemplate} className="border-white/10 bg-white/[0.03] text-slate-100 hover:bg-white/[0.08]"><FileText className="mr-2 h-4 w-4" /> Download template</Button><Button variant="outline" onClick={() => setLocation("/transactions")} className="border-white/10 bg-white/[0.03] text-slate-100 hover:bg-white/[0.08]">View transactions</Button></div></PageTitle>
+    <div className="grid gap-6 xl:grid-cols-[0.92fr_1.08fr]"><div className="space-y-6"><Panel><div className="flex items-start gap-3"><div className="rounded-xl bg-cyan-300/10 p-2.5 text-cyan-300"><Upload className="h-5 w-5" /></div><div><p className="text-sm font-semibold text-slate-100">Upload a transaction CSV</p><p className="mt-1 text-sm leading-6 text-slate-500">Files are validated before scoring. Valid, non-duplicate rows are imported; rows with errors are reported without blocking the rest of the file.</p></div></div><div className="mt-6 rounded-xl border border-dashed border-white/15 bg-[#07111e]/70 p-5"><label htmlFor="transaction-csv" className="block cursor-pointer"><span className="text-sm font-medium text-slate-200">CSV file</span><span className="mt-1 block text-xs text-slate-500">UTF-8 text · up to 1 MB · maximum 500 rows recommended</span><Input id="transaction-csv" type="file" accept=".csv,text/csv" onChange={(event) => chooseFile(event.target.files?.[0] ?? null)} className="mt-4 cursor-pointer border-white/10 bg-[#0c1a28] text-slate-300 file:mr-4 file:border-0 file:bg-cyan-300 file:px-3 file:py-1.5 file:text-xs file:font-semibold file:text-slate-950 hover:file:bg-cyan-200" aria-invalid={Boolean(fileError)} /></label>{file ? <div className="mt-4 flex items-center gap-2 rounded-lg bg-emerald-300/[0.07] px-3 py-2 text-sm text-emerald-100"><CheckCircle2 className="h-4 w-4 shrink-0" /><span className="truncate">{file.name}</span><span className="ml-auto shrink-0 text-xs text-emerald-200/70">{Math.ceil(file.size / 1024)} KB</span></div> : null}{fileError ? <p role="alert" className="mt-3 text-sm text-rose-200">{fileError}</p> : null}</div><Button onClick={upload} disabled={!file || importCsv.isPending} className="mt-5 w-full bg-cyan-300 text-slate-950 hover:bg-cyan-200">{importCsv.isPending ? "Validating and scoring…" : "Validate and import transactions"}<ArrowRight className="ml-2 h-4 w-4" /></Button></Panel>
+      <Panel><Eyebrow>Required columns</Eyebrow><p className="mt-2 text-sm leading-6 text-slate-400">Column names are case-insensitive. Use the template to ensure the expected structure.</p><div className="mt-4 flex flex-wrap gap-2">{["reference", "amount", "merchantCategory", "transactionCountry", "accountCountry", "deviceStatus", "transactionHour", "recentTransactionCount"].map((column) => <code key={column} className="rounded-md border border-white/[0.07] bg-white/[0.035] px-2 py-1 text-[11px] text-cyan-100">{column}</code>)}</div><p className="mt-5 text-xs leading-5 text-slate-500"><span className="font-semibold text-slate-400">Duplicate handling:</span> references already present in this workspace and duplicate references within the file are skipped and reported. Identical references in another workspace remain isolated.</p></Panel></div>
+      <div className="space-y-6">{result ? <><div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4"><Panel><p className="text-xs font-medium text-slate-500">Source rows</p><p className="mt-2 text-3xl font-semibold text-slate-100">{result.totalRows}</p></Panel><Panel><p className="text-xs font-medium text-slate-500">Imported and scored</p><p className="mt-2 text-3xl font-semibold text-emerald-200">{result.imported}</p></Panel><Panel><p className="text-xs font-medium text-slate-500">Invalid rows</p><p className="mt-2 text-3xl font-semibold text-rose-200">{result.invalidRows}</p></Panel><Panel><p className="text-xs font-medium text-slate-500">Duplicates skipped</p><p className="mt-2 text-3xl font-semibold text-amber-200">{result.duplicates}</p></Panel></div><Panel><div className="flex items-start justify-between gap-4"><div><Eyebrow>Import summary</Eyebrow><h2 className="mt-2 text-xl font-semibold text-slate-100">{result.fileName}</h2><p className="mt-1 text-sm text-slate-500">Bulk risk scoring was completed only for accepted transaction rows.</p></div><div className="flex gap-2"><RiskPill level="high" /><span className="text-sm font-semibold text-slate-200">{result.riskDistribution.high}</span><RiskPill level="medium" /><span className="text-sm font-semibold text-slate-200">{result.riskDistribution.medium}</span><RiskPill level="low" /><span className="text-sm font-semibold text-slate-200">{result.riskDistribution.low}</span></div></div>{result.importedRecords.length ? <div className="mt-5 overflow-x-auto"><table className="w-full min-w-[520px] text-left text-sm"><thead><tr className="border-b border-white/[0.07] text-[10px] uppercase tracking-[0.13em] text-slate-500"><th className="pb-3 font-medium">Reference</th><th className="pb-3 font-medium">Risk</th><th className="pb-3 text-right font-medium">Probability</th></tr></thead><tbody>{result.importedRecords.map((record: any) => <tr key={record.id} className="border-b border-white/[0.045] last:border-0"><td className="py-3 font-mono text-xs text-slate-300">{record.reference}</td><td className="py-3"><RiskPill level={record.riskLevel} /></td><td className="py-3 text-right font-semibold text-slate-200">{record.probability}%</td></tr>)}</tbody></table></div> : null}</Panel>{result.errors.length ? <Panel><div><Eyebrow>Row-level errors</Eyebrow><h2 className="mt-2 text-xl font-semibold text-slate-100">Correct and re-upload these rows</h2><p className="mt-1 text-sm text-slate-500">Showing up to 100 errors. Accepted rows do not need to be re-imported.</p></div><div className="mt-5 max-h-[420px] overflow-auto rounded-xl border border-white/[0.07]"><table className="w-full min-w-[620px] text-left text-sm"><thead className="sticky top-0 bg-[#0c1a28]"><tr className="border-b border-white/[0.07] text-[10px] uppercase tracking-[0.13em] text-slate-500"><th className="px-4 py-3 font-medium">Row</th><th className="px-4 py-3 font-medium">Field</th><th className="px-4 py-3 font-medium">Issue</th></tr></thead><tbody>{result.errors.map((error: any, index: number) => <tr key={`${error.row}-${error.field}-${index}`} className="border-b border-white/[0.045] last:border-0"><td className="px-4 py-3 font-mono text-xs text-slate-400">{error.row}</td><td className="px-4 py-3 font-mono text-xs text-cyan-100">{error.field}</td><td className="px-4 py-3 text-slate-300">{error.message}</td></tr>)}</tbody></table></div></Panel> : null}</> : <Panel className="flex min-h-[360px] flex-col justify-center"><div className="flex h-12 w-12 items-center justify-center rounded-xl bg-cyan-300/10 text-cyan-300"><Database className="h-6 w-6" /></div><h2 className="mt-5 text-xl font-semibold text-slate-100">Ready for a validated batch.</h2><p className="mt-2 max-w-md text-sm leading-6 text-slate-500">Upload a CSV to receive a row-level validation report, duplicate checks, bulk risk scores, and a workspace-scoped import summary.</p></Panel>}</div></div>
+  </Frame>;
+}

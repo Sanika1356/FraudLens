@@ -125,6 +125,40 @@ describe("Clerk-protected FraudLens APIs", () => {
     await expect(manager.risk.workload()).resolves.toMatchObject({ active: expect.any(Number) });
   });
 
+  it("requires manager access for CSV import and reports invalid rows without blocking valid scored records", async () => {
+    const csv = [
+      "reference,amount,merchantCategory,transactionCountry,accountCountry,deviceStatus,transactionHour,recentTransactionCount",
+      "FRAUD-IMPORT-VALID,610.25,electronics,US,US,new,1,6",
+      "FRAUD-IMPORT-BAD,0,electronics,US,US,new,25,6",
+    ].join("\n");
+    const payload = { fileName: "batch.csv", contentBase64: Buffer.from(csv, "utf8").toString("base64") };
+    const analyst = appRouter.createCaller(createContext(createUser("analyst"), "org_csv_permissions"));
+    const manager = appRouter.createCaller(createContext(createUser("manager"), "org_csv_permissions"));
+
+    await expect(analyst.risk.importCsv(payload)).rejects.toMatchObject({ code: "FORBIDDEN" });
+    const imported = await manager.risk.importCsv(payload);
+
+    expect(imported).toMatchObject({ totalRows: 2, imported: 1, invalidRows: 1 });
+    expect(imported.errors).toEqual(expect.arrayContaining([expect.objectContaining({ row: 3, field: "amount" })]));
+    expect((await manager.risk.list({})).some((record) => record.reference === "FRAUD-IMPORT-VALID")).toBe(true);
+  });
+
+  it("keeps CSV transaction references and duplicate checks isolated to each organization", async () => {
+    const csv = [
+      "reference,amount,merchantCategory,transactionCountry,accountCountry,deviceStatus,transactionHour,recentTransactionCount",
+      "FRAUD-IMPORT-ISOLATED,775,electronics,US,US,new,2,7",
+    ].join("\n");
+    const payload = { fileName: "isolated.csv", contentBase64: Buffer.from(csv, "utf8").toString("base64") };
+    const firstWorkspace = appRouter.createCaller(createContext(createUser("manager"), "org_csv_first"));
+    const secondWorkspace = appRouter.createCaller(createContext(createUser("manager"), "org_csv_second"));
+
+    await expect(firstWorkspace.risk.importCsv(payload)).resolves.toMatchObject({ imported: 1, duplicates: 0 });
+    await expect(firstWorkspace.risk.importCsv(payload)).resolves.toMatchObject({ imported: 0, duplicates: 1 });
+    await expect(secondWorkspace.risk.importCsv(payload)).resolves.toMatchObject({ imported: 1, duplicates: 0 });
+    expect((await firstWorkspace.risk.list({})).filter((record) => record.reference === "FRAUD-IMPORT-ISOLATED")).toHaveLength(1);
+    expect((await secondWorkspace.risk.list({})).filter((record) => record.reference === "FRAUD-IMPORT-ISOLATED")).toHaveLength(1);
+  });
+
   it("records case workflow events in an immutable organization-scoped audit history", async () => {
     const firstWorkspace = appRouter.createCaller(createContext(createUser("manager"), "org_audit_first"));
     const secondWorkspace = appRouter.createCaller(createContext(createUser("manager"), "org_audit_second"));
