@@ -12,12 +12,12 @@ import {
   revokeMemberSessions,
   revokeOrganizationInvitation,
 } from "./adminManagement";
-import { addCaseComment, addCaseEvidence, getAuditEventsByOrganization, getCaseCollaboration, getDb, getNotificationPreferences, getTransactionReferencesByOrganization, persistTransaction, recordAuditEvent, replaceCaseTags, upsertNotificationPreferences } from "./db";
+import { addCaseComment, addCaseEvidence, deleteOutcomeFeedback, getAuditEventsByOrganization, getCaseCollaboration, getDb, getNotificationPreferences, getOutcomeFeedbackByOrganization, getTransactionReferencesByOrganization, persistTransaction, recordAuditEvent, replaceCaseTags, upsertNotificationPreferences, upsertOutcomeFeedback } from "./db";
 import { createEvidenceStorageKey, isSupabaseStorageConfigured, storageDelete, storagePut } from "./storage";
 import { decodeAndValidateEvidenceAttachment } from "./evidenceFiles";
 import { demoTransactions, driftDemo, RiskRecord } from "./demoData";
 import { createInvestigatorSummary } from "./investigatorSummary";
-import { modelHealth } from "./modelData";
+import { buildModelQualityReport, classifyOutcome } from "./outcomeFeedback";
 import { CASE_STATUSES, RISK_LEVELS, RiskInput, scoreTransaction } from "./riskEngine";
 import { parseCsvImport } from "./csvImport";
 import { ALERT_CHANNELS, createTestAlertTransaction, isAllowedSlackWebhookUrl, isAllowedTeamsWebhookUrl, sendAlertNotifications } from "./notifications";
@@ -106,6 +106,12 @@ export function applyCaseUpdate(record: RiskRecord, input: z.infer<typeof caseUp
   record.resolutionReasonCode = input.caseStatus === "under_review" ? null : input.resolutionReasonCode ?? null;
   record.isNew = false;
   return record;
+}
+
+function actualOutcomeForCaseStatus(caseStatus: RiskRecord["caseStatus"]) {
+  if (caseStatus === "confirmed_fraud") return "fraud" as const;
+  if (caseStatus === "legitimate") return "legitimate" as const;
+  return null;
 }
 
 export function applyCaseWorkflowUpdate(
@@ -429,9 +435,24 @@ export const appRouter = router({
       if (input.caseStatus !== "under_review" && !input.resolutionReasonCode) throw new Error("Select a resolution reason before closing a case.");
       const previousStatus = record.caseStatus;
       applyCaseUpdate(record, input);
+      const actualOutcome = actualOutcomeForCaseStatus(record.caseStatus);
+      const feedback = actualOutcome
+        ? await upsertOutcomeFeedback({
+          orgId: ctx.orgId,
+          transactionId: record.id,
+          predictedRiskLabel: record.riskLevel,
+          predictedProbability: record.probability,
+          actualOutcome,
+          classification: classifyOutcome(record.riskLevel, actualOutcome),
+          resolutionReasonCode: record.resolutionReasonCode,
+          recordedById: ctx.user!.openId,
+          recordedByName: ctx.user!.name ?? ctx.user!.email ?? "Investigator",
+        })
+        : null;
+      if (!actualOutcome) await deleteOutcomeFeedback(ctx.orgId, record.id);
       await persistTransaction(ctx.orgId, asInsertTransaction(record));
       await addCaseComment({ orgId: ctx.orgId, transactionId: record.id, note: record.caseNote!, authorId: ctx.user!.openId, authorName: ctx.user!.name ?? ctx.user!.email ?? "Investigator" });
-      await recordAuditEvent({ orgId: ctx.orgId, eventType: "case.status_changed", actorId: ctx.user!.openId, actorName: ctx.user!.name ?? ctx.user!.email, subjectType: "case", subjectId: String(record.id), summary: `Changed ${record.reference} from ${previousStatus} to ${record.caseStatus}.`, metadata: { previousStatus, caseStatus: record.caseStatus, resolutionReasonCode: record.resolutionReasonCode, noteAdded: Boolean(record.caseNote) } });
+      await recordAuditEvent({ orgId: ctx.orgId, eventType: "case.status_changed", actorId: ctx.user!.openId, actorName: ctx.user!.name ?? ctx.user!.email, subjectType: "case", subjectId: String(record.id), summary: `Changed ${record.reference} from ${previousStatus} to ${record.caseStatus}.`, metadata: { previousStatus, caseStatus: record.caseStatus, resolutionReasonCode: record.resolutionReasonCode, noteAdded: Boolean(record.caseNote), actualOutcome: feedback?.actualOutcome ?? null, classification: feedback?.classification ?? null } });
       return record;
     }),
     evidenceStorageStatus: organizationProcedure.query(() => ({
@@ -547,7 +568,10 @@ export const appRouter = router({
       await persistTransaction(ctx.orgId, asInsertTransaction(record));
       return { record, source: summary.source };
     }),
-    modelHealth: organizationManagerProcedure.query(() => modelHealth),
+    modelHealth: organizationManagerProcedure.query(async ({ ctx }) => {
+      const feedback = await getOutcomeFeedbackByOrganization(ctx.orgId);
+      return buildModelQualityReport(feedback);
+    }),
     drift: organizationManagerProcedure.query(() => driftDemo),
     persistenceStatus: organizationProcedure.query(async () => ({ connected: Boolean(await getDb()) })),
   }),

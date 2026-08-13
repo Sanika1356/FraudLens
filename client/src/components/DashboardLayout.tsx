@@ -33,7 +33,7 @@ const menuItems = [
   { icon: PlusCircle, label: "New Assessment", path: "/assess" },
   { icon: Upload, label: "Import Transactions", path: "/import", requiresManager: true },
   { icon: ShieldCheck, label: "Casework", path: "/casework" },
-  { icon: Activity, label: "Model Health", path: "/model-health", requiresManager: true },
+  { icon: Activity, label: "Outcome Quality", path: "/model-health", requiresManager: true },
   { icon: Radar, label: "Drift Monitor", path: "/drift", requiresManager: true },
   { icon: ScrollText, label: "Audit Log", path: "/audit", requiresManager: true },
   { icon: BellRing, label: "Alert Settings", path: "/alerts", requiresManager: true },

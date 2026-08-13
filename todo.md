@@ -10,7 +10,6 @@ This list contains only FraudLens work that remains to be implemented.
 
 ## Alerts, Reporting, and Model Oversight
 
-- [ ] Add a feedback loop that records confirmed fraud and legitimate outcomes, tracks false positives and false negatives, and surfaces model-quality trends.
 - [ ] Add reporting with filtered CSV exports, scheduled weekly risk summaries, case-resolution metrics, analyst-workload metrics, and downloadable report files.
 - [ ] Add a versioned public API with scoped API keys, rate limits, input validation, request logs, and documentation for programmatic transaction submission.
 

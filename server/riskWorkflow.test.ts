@@ -5,6 +5,7 @@ import { decodeAndValidateEvidenceAttachment } from "./evidenceFiles";
 import { createEvidenceStorageKey } from "./storage";
 import { applyCaseUpdate, applyCaseWorkflowUpdate, caseUpdateSchema, caseWorkflowUpdateSchema, notificationPreferencesSchema, riskInputSchema } from "./routers";
 import { shouldSendHighRiskAlert } from "./notifications";
+import { buildModelQualityReport, classifyOutcome } from "./outcomeFeedback";
 
 describe("FraudLens workflow validation", () => {
   it("rejects unsafe manual assessment inputs before scoring", () => {
@@ -131,6 +132,43 @@ describe("FraudLens workflow validation", () => {
     expect(missingEmail.success).toBe(false);
     expect(unsafeSlack.success).toBe(false);
     expect(valid.success).toBe(true);
+  });
+
+  it("classifies confirmed case outcomes against the high-risk model decision boundary", () => {
+    expect(classifyOutcome("high", "fraud")).toBe("true_positive");
+    expect(classifyOutcome("high", "legitimate")).toBe("false_positive");
+    expect(classifyOutcome("medium", "fraud")).toBe("false_negative");
+    expect(classifyOutcome("low", "legitimate")).toBe("true_negative");
+  });
+
+  it("derives organization quality metrics only from confirmed outcomes", () => {
+    const report = buildModelQualityReport([
+      { predictedRiskLabel: "high", actualOutcome: "fraud", classification: "true_positive", recordedAt: new Date("2026-08-11T10:00:00.000Z") },
+      { predictedRiskLabel: "high", actualOutcome: "fraud", classification: "true_positive", recordedAt: new Date("2026-08-11T11:00:00.000Z") },
+      { predictedRiskLabel: "high", actualOutcome: "legitimate", classification: "false_positive", recordedAt: new Date("2026-08-12T10:00:00.000Z") },
+      { predictedRiskLabel: "medium", actualOutcome: "fraud", classification: "false_negative", recordedAt: new Date("2026-08-12T11:00:00.000Z") },
+      { predictedRiskLabel: "low", actualOutcome: "legitimate", classification: "true_negative", recordedAt: new Date("2026-08-12T12:00:00.000Z") },
+    ]);
+
+    expect(report).toMatchObject({
+      reviewed: 5,
+      confirmedFraud: 3,
+      legitimate: 2,
+      precisionMilli: 667,
+      recallMilli: 667,
+      f1Milli: 667,
+      accuracyMilli: 600,
+      confusionMatrix: { truePositive: 2, falsePositive: 1, falseNegative: 1, trueNegative: 1 },
+    });
+    expect(report.trend).toEqual(expect.arrayContaining([
+      expect.objectContaining({ day: "2026-08-11", reviewed: 2, confirmedFraud: 2 }),
+      expect.objectContaining({ day: "2026-08-12", reviewed: 3, falsePositive: 1, falseNegative: 1 }),
+    ]));
+  });
+
+  it("reports unavailable rates when no confirmed outcomes exist", () => {
+    const report = buildModelQualityReport([]);
+    expect(report).toMatchObject({ reviewed: 0, precisionMilli: null, recallMilli: null, f1Milli: null, accuracyMilli: null });
   });
 
   it("reports required headers and malformed quoted CSV data precisely", () => {

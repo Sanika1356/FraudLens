@@ -275,6 +275,34 @@ describe("Clerk-protected FraudLens APIs", () => {
     await expect(secondWorkspace.notifications.get()).resolves.toMatchObject({ orgId: "org_notification_second", slackEnabled: false, riskThreshold: 80 });
   });
 
+  it("records confirmed outcomes in the active organization only", async () => {
+    const firstWorkspace = appRouter.createCaller(createContext(createUser("manager"), "org_feedback_first"));
+    const secondWorkspace = appRouter.createCaller(createContext(createUser("manager"), "org_feedback_second"));
+    const assessed = await firstWorkspace.risk.assess({
+      amount: 2000,
+      merchantCategory: "electronics",
+      transactionCountry: "CA",
+      accountCountry: "US",
+      deviceStatus: "new",
+      transactionHour: 1,
+      recentTransactionCount: 7,
+    });
+
+    await firstWorkspace.risk.updateCase({
+      id: assessed.id,
+      caseStatus: "confirmed_fraud",
+      note: "Confirmed through approved investigation evidence.",
+      resolutionReasonCode: "pattern_match",
+    });
+
+    await expect(firstWorkspace.risk.modelHealth()).resolves.toMatchObject({
+      reviewed: 1,
+      confirmedFraud: 1,
+      confusionMatrix: { truePositive: 1, falsePositive: 0, falseNegative: 0, trueNegative: 0 },
+    });
+    await expect(secondWorkspace.risk.modelHealth()).resolves.toMatchObject({ reviewed: 0 });
+  });
+
   it("permits managers and administrators to view model-monitoring data", async () => {
     const manager = appRouter.createCaller(createContext(createUser("manager")));
     const administrator = appRouter.createCaller(createContext(createUser("admin")));

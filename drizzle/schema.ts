@@ -110,6 +110,23 @@ export const notificationPreferences = mysqlTable("notificationPreferences", {
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });
 
+export const outcomeFeedback = mysqlTable("outcomeFeedback", {
+  id: int("id").autoincrement().primaryKey(),
+  /** Clerk organization identifier keeps analyst feedback inside the active workspace. */
+  orgId: varchar("orgId", { length: 64 }).notNull(),
+  transactionId: int("transactionId").notNull(),
+  /** The model decision at the time of assessment; high risk is treated as a positive prediction. */
+  predictedRiskLabel: mysqlEnum("predictedRiskLabel", ["low", "medium", "high"]).notNull(),
+  predictedProbability: int("predictedProbability").notNull(),
+  /** Human-confirmed case result, never inferred automatically. */
+  actualOutcome: mysqlEnum("actualOutcome", ["fraud", "legitimate"]).notNull(),
+  classification: mysqlEnum("classification", ["true_positive", "false_positive", "false_negative", "true_negative"]).notNull(),
+  resolutionReasonCode: varchar("resolutionReasonCode", { length: 64 }),
+  recordedById: varchar("recordedById", { length: 64 }),
+  recordedByName: varchar("recordedByName", { length: 160 }),
+  recordedAt: timestamp("recordedAt").defaultNow().notNull(),
+}, (table) => [uniqueIndex("outcome_feedback_org_transaction_unique").on(table.orgId, table.transactionId)]);
+
 export const modelMetricSnapshots = mysqlTable("modelMetricSnapshots", {
   id: int("id").autoincrement().primaryKey(),
   /** Clerk organization identifier for workspace-level model metrics. */
@@ -144,3 +161,5 @@ export type Transaction = typeof transactions.$inferSelect;
 export type InsertTransaction = typeof transactions.$inferInsert;
 export type NotificationPreferences = typeof notificationPreferences.$inferSelect;
 export type InsertNotificationPreferences = typeof notificationPreferences.$inferInsert;
+export type OutcomeFeedback = typeof outcomeFeedback.$inferSelect;
+export type InsertOutcomeFeedback = typeof outcomeFeedback.$inferInsert;

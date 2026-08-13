@@ -1,6 +1,7 @@
 import { and, desc, eq } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
-import { auditEvents, caseEvidence, caseNotes, caseTags, InsertUser, InsertTransaction, notificationPreferences, transactions, users } from "../drizzle/schema";
+import { auditEvents, caseEvidence, caseNotes, caseTags, InsertUser, InsertTransaction, notificationPreferences, outcomeFeedback, transactions, users } from "../drizzle/schema";
+import type { ActualOutcome, OutcomeClassification } from "./outcomeFeedback";
 import { ENV } from "./_core/env";
 
 let database: ReturnType<typeof drizzle> | null = null;
@@ -69,6 +70,23 @@ export type NotificationPreferencesRecord = NotificationPreferencesInput & {
   updatedAt: Date;
 };
 
+export type OutcomeFeedbackInput = {
+  orgId: string;
+  transactionId: number;
+  predictedRiskLabel: "low" | "medium" | "high";
+  predictedProbability: number;
+  actualOutcome: ActualOutcome;
+  classification: OutcomeClassification;
+  resolutionReasonCode: string | null;
+  recordedById: string | null;
+  recordedByName: string | null;
+};
+
+export type OutcomeFeedbackRecord = OutcomeFeedbackInput & {
+  id: number;
+  recordedAt: Date;
+};
+
 export const DEFAULT_NOTIFICATION_PREFERENCES: NotificationPreferencesInput = {
   emailEnabled: false,
   toEmail: null,
@@ -84,6 +102,7 @@ const inMemoryComments = new Map<string, CaseCommentRecord[]>();
 const inMemoryTags = new Map<string, CaseTagRecord[]>();
 const inMemoryEvidence = new Map<string, CaseEvidenceRecord[]>();
 const inMemoryNotificationPreferences = new Map<string, NotificationPreferencesRecord>();
+const inMemoryOutcomeFeedback = new Map<string, OutcomeFeedbackRecord>();
 let inMemoryCaseArtifactId = 1;
 
 function caseKey(orgId: string, transactionId: number) {
@@ -180,6 +199,73 @@ export async function upsertNotificationPreferences(
     set: { ...preferences, updatedAt: new Date() },
   });
   return getNotificationPreferences(orgId);
+}
+
+export async function getOutcomeFeedbackByOrganization(orgId: string): Promise<OutcomeFeedbackRecord[]> {
+  const db = await getDb();
+  if (!db) {
+    return Array.from(inMemoryOutcomeFeedback.values())
+      .filter((feedback) => feedback.orgId === orgId)
+      .sort((first, second) => first.recordedAt.getTime() - second.recordedAt.getTime());
+  }
+  const rows = await db.select().from(outcomeFeedback)
+    .where(eq(outcomeFeedback.orgId, orgId))
+    .orderBy(outcomeFeedback.recordedAt);
+  return rows.map((row) => ({
+    ...row,
+    orgId: row.orgId,
+    resolutionReasonCode: row.resolutionReasonCode ?? null,
+    recordedById: row.recordedById ?? null,
+    recordedByName: row.recordedByName ?? null,
+  }));
+}
+
+export async function upsertOutcomeFeedback(input: OutcomeFeedbackInput): Promise<OutcomeFeedbackRecord> {
+  const key = caseKey(input.orgId, input.transactionId);
+  const db = await getDb();
+  if (!db) {
+    const saved: OutcomeFeedbackRecord = {
+      ...input,
+      id: inMemoryOutcomeFeedback.get(key)?.id ?? Date.now(),
+      recordedAt: new Date(),
+    };
+    inMemoryOutcomeFeedback.set(key, saved);
+    return saved;
+  }
+
+  await db.insert(outcomeFeedback).values(input).onDuplicateKeyUpdate({
+    set: {
+      predictedRiskLabel: input.predictedRiskLabel,
+      predictedProbability: input.predictedProbability,
+      actualOutcome: input.actualOutcome,
+      classification: input.classification,
+      resolutionReasonCode: input.resolutionReasonCode,
+      recordedById: input.recordedById,
+      recordedByName: input.recordedByName,
+      recordedAt: new Date(),
+    },
+  });
+  const rows = await db.select().from(outcomeFeedback)
+    .where(and(eq(outcomeFeedback.orgId, input.orgId), eq(outcomeFeedback.transactionId, input.transactionId)))
+    .limit(1);
+  const saved = rows[0];
+  if (!saved) throw new Error("Outcome feedback could not be saved.");
+  return {
+    ...saved,
+    orgId: saved.orgId,
+    resolutionReasonCode: saved.resolutionReasonCode ?? null,
+    recordedById: saved.recordedById ?? null,
+    recordedByName: saved.recordedByName ?? null,
+  };
+}
+
+export async function deleteOutcomeFeedback(orgId: string, transactionId: number): Promise<void> {
+  const db = await getDb();
+  if (!db) {
+    inMemoryOutcomeFeedback.delete(caseKey(orgId, transactionId));
+    return;
+  }
+  await db.delete(outcomeFeedback).where(and(eq(outcomeFeedback.orgId, orgId), eq(outcomeFeedback.transactionId, transactionId)));
 }
 
 export async function recordAuditEvent(input: AuditEventInput): Promise<void> {
