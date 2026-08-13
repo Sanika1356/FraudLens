@@ -1,13 +1,11 @@
 import { z } from "zod";
-import { getSessionCookieOptions } from "./_core/cookies";
 import { systemRouter } from "./_core/systemRouter";
-import { publicProcedure, router } from "./_core/trpc";
+import { protectedProcedure, publicProcedure, router } from "./_core/trpc";
 import { getDb, persistTransaction } from "./db";
 import { demoTransactions, driftDemo, RiskRecord } from "./demoData";
 import { createInvestigatorSummary } from "./investigatorSummary";
 import { modelHealth } from "./modelData";
 import { CASE_STATUSES, RISK_LEVELS, RiskInput, scoreTransaction } from "./riskEngine";
-import { COOKIE_NAME } from "@shared/const";
 
 export const riskInputSchema = z.object({
   amount: z.number().positive().max(1000000),
@@ -91,15 +89,10 @@ export const appRouter = router({
   system: systemRouter,
   auth: router({
     me: publicProcedure.query((opts) => opts.ctx.user),
-    logout: publicProcedure.mutation(({ ctx }) => {
-      const cookieOptions = getSessionCookieOptions(ctx.req);
-      ctx.res.clearCookie(COOKIE_NAME, { ...cookieOptions, maxAge: -1 });
-      return { success: true } as const;
-    }),
   }),
   risk: router({
-    overview: publicProcedure.query(() => buildOverview()),
-    list: publicProcedure.input(z.object({
+    overview: protectedProcedure.query(() => buildOverview()),
+    list: protectedProcedure.input(z.object({
       riskLevel: z.enum(RISK_LEVELS).optional(),
       caseStatus: z.enum(CASE_STATUSES).optional(),
       merchantCategory: z.string().trim().max(80).optional(),
@@ -116,8 +109,8 @@ export const appRouter = router({
       });
       return [...filtered].sort((first, second) => second.createdAt.getTime() - first.createdAt.getTime());
     }),
-    detail: publicProcedure.input(z.object({ id: z.number().int().positive() })).query(({ input }) => getRecord(input.id) ?? null),
-    assess: publicProcedure.input(riskInputSchema).mutation(async ({ input }) => {
+    detail: protectedProcedure.input(z.object({ id: z.number().int().positive() })).query(({ input }) => getRecord(input.id) ?? null),
+    assess: protectedProcedure.input(riskInputSchema).mutation(async ({ input }) => {
       const decision = scoreTransaction(input as RiskInput);
       const record: RiskRecord = {
         id: nextId++,
@@ -136,14 +129,14 @@ export const appRouter = router({
       await persistTransaction(asInsertTransaction(record));
       return record;
     }),
-    updateCase: publicProcedure.input(caseUpdateSchema).mutation(async ({ input }) => {
+    updateCase: protectedProcedure.input(caseUpdateSchema).mutation(async ({ input }) => {
       const record = getRecord(input.id);
       if (!record) throw new Error("Transaction not found");
       applyCaseUpdate(record, input);
       await persistTransaction(asInsertTransaction(record));
       return record;
     }),
-    summarize: publicProcedure.input(z.object({ id: z.number().int().positive() })).mutation(async ({ input }) => {
+    summarize: protectedProcedure.input(z.object({ id: z.number().int().positive() })).mutation(async ({ input }) => {
       const record = getRecord(input.id);
       if (!record) throw new Error("Transaction not found");
       const summary = await createInvestigatorSummary({
@@ -157,9 +150,9 @@ export const appRouter = router({
       await persistTransaction(asInsertTransaction(record));
       return { record, source: summary.source };
     }),
-    modelHealth: publicProcedure.query(() => modelHealth),
-    drift: publicProcedure.query(() => driftDemo),
-    persistenceStatus: publicProcedure.query(async () => ({ connected: Boolean(await getDb()) })),
+    modelHealth: protectedProcedure.query(() => modelHealth),
+    drift: protectedProcedure.query(() => driftDemo),
+    persistenceStatus: protectedProcedure.query(async () => ({ connected: Boolean(await getDb()) })),
   }),
 });
 

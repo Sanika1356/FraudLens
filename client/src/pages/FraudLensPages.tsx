@@ -47,7 +47,7 @@ function StatusPill({ status }: { status: CaseStatus }) {
 }
 function money(value: number) { return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 }).format(value); }
 function date(value: Date | string) { return new Date(value).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }); }
-function Frame({ children }: { children: React.ReactNode }) { return <DashboardLayout allowDemoAccess><div className="mx-auto max-w-[1540px] fraudlens-enter">{children}</div></DashboardLayout>; }
+function Frame({ children }: { children: React.ReactNode }) { return <DashboardLayout><div className="mx-auto max-w-[1540px] fraudlens-enter">{children}</div></DashboardLayout>; }
 function Eyebrow({ children }: { children: React.ReactNode }) { return <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-cyan-300">{children}</p>; }
 function PageTitle({ eyebrow, title, children }: { eyebrow: string; title: string; children?: React.ReactNode }) { return <div className="mb-8 flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between"><div><Eyebrow>{eyebrow}</Eyebrow><h1 className="mt-2 text-3xl font-semibold tracking-tight text-slate-50 sm:text-4xl">{title}</h1></div>{children}</div>; }
 function Panel({ children, className = "" }: { children: React.ReactNode; className?: string }) { return <Card className={`border-white/[0.075] bg-[#0c1a28] shadow-none ${className}`}><CardContent className="p-5">{children}</CardContent></Card>; }

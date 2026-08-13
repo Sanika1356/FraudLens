@@ -45,8 +45,13 @@ The baseline uses robust scaling, class balancing, and a threshold selected on a
 
 ```bash
 pnpm install
+cp .env.example .env
 pnpm dev
 ```
+
+Before starting the application, add your Clerk publishable key and secret key to the local `.env` file. Set both `VITE_CLERK_PUBLISHABLE_KEY` and `CLERK_PUBLISHABLE_KEY` to the publishable key; the former is used by the React client and the latter by the Express middleware. Set `CLERK_SECRET_KEY` only on the server. The `.env` file is ignored by Git and must never be committed.
+
+Authentication is required for every FraudLens workspace route and risk-management API. Clerk provides sign-up, sign-in, password recovery, and any enabled social-login flow at `/sign-in` and `/sign-up`.
 
 Run type validation and tests with:
 

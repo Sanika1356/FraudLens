@@ -72,8 +72,8 @@ const callForge = async <T>(
     "content-type": "application/json",
     "connect-protocol-version": "1",
   };
-  // userSession is the decoded `app_session_id` cookie value (NOT the raw
-  // Cookie header). Empty string falls back to the project owner identity.
+  // userSession carries authenticated caller context when it is available.
+  // An empty value falls back to the configured project owner identity.
   if (userSession) {
     headers["x-app-user-session"] = userSession;
   }

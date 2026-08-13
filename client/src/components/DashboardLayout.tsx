@@ -20,9 +20,8 @@ import {
   SidebarTrigger,
   useSidebar,
 } from "@/components/ui/sidebar";
-import { startLogin } from "@/const";
 import { useIsMobile } from "@/hooks/useMobile";
-import { Activity, ClipboardList, LayoutDashboard, LogIn, LogOut, PanelLeft, PlusCircle, Radar, ShieldCheck } from "lucide-react";
+import { Activity, ClipboardList, LayoutDashboard, LogOut, PanelLeft, PlusCircle, Radar, ShieldCheck } from "lucide-react";
 import { CSSProperties, useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
 import { DashboardLayoutSkeleton } from "./DashboardLayoutSkeleton";
@@ -59,7 +58,7 @@ export default function DashboardLayout({ children, allowDemoAccess = false }: {
           <p className="text-xs font-semibold uppercase tracking-[0.22em] text-cyan-300">FraudLens workspace</p>
           <h1 className="mt-3 text-3xl font-semibold tracking-tight">Sign in to investigate.</h1>
           <p className="mt-3 text-sm leading-6 text-slate-400">Access the analyst console to review risk assessments and manage investigation cases.</p>
-          <Button onClick={() => startLogin()} className="mt-8 w-full bg-cyan-300 text-slate-950 hover:bg-cyan-200">Sign in to FraudLens</Button>
+          <Button onClick={() => window.location.assign("/sign-in")} className="mt-8 w-full bg-cyan-300 text-slate-950 hover:bg-cyan-200">Sign in to FraudLens</Button>
         </div>
       </div>
     );
@@ -123,7 +122,7 @@ function DashboardLayoutContent({ children, setSidebarWidth, allowDemoAccess }: 
           </SidebarContent>
           <SidebarFooter className="p-3">
             <div className="mb-3 rounded-lg border border-amber-200/10 bg-amber-300/[0.05] px-3 py-2.5 group-data-[collapsible=icon]:hidden"><p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-amber-200">Portfolio preview</p><p className="mt-1 text-xs leading-4 text-slate-500">Illustrative cases. No live payment data.</p></div>
-            {user ? <DropdownMenu><DropdownMenuTrigger asChild><button className="flex w-full items-center gap-3 rounded-lg px-1 py-1 text-left transition-colors hover:bg-white/[0.06]"><Avatar className="h-9 w-9 border border-white/10"><AvatarFallback className="bg-cyan-300/10 text-xs font-semibold text-cyan-200">{displayName.charAt(0).toUpperCase()}</AvatarFallback></Avatar><div className="min-w-0 flex-1 group-data-[collapsible=icon]:hidden"><p className="truncate text-sm font-medium text-slate-200">{displayName}</p><p className="mt-1 truncate text-xs text-slate-500">Investigator</p></div></button></DropdownMenuTrigger><DropdownMenuContent align="end" className="w-48"><DropdownMenuItem onClick={logout} className="cursor-pointer text-destructive focus:text-destructive"><LogOut className="mr-2 h-4 w-4" />Sign out</DropdownMenuItem></DropdownMenuContent></DropdownMenu> : allowDemoAccess ? <button onClick={() => startLogin()} className="flex w-full items-center gap-3 rounded-lg px-1 py-1 text-left transition-colors hover:bg-white/[0.06]"><Avatar className="h-9 w-9 border border-white/10"><AvatarFallback className="bg-slate-800 text-xs font-semibold text-slate-300">GA</AvatarFallback></Avatar><div className="min-w-0 flex-1 group-data-[collapsible=icon]:hidden"><p className="truncate text-sm font-medium text-slate-200">Guest analyst</p><p className="mt-1 flex items-center gap-1 text-xs text-cyan-300"><LogIn className="h-3 w-3" /> Sign in to save</p></div></button> : null}
+            {user ? <DropdownMenu><DropdownMenuTrigger asChild><button className="flex w-full items-center gap-3 rounded-lg px-1 py-1 text-left transition-colors hover:bg-white/[0.06]"><Avatar className="h-9 w-9 border border-white/10"><AvatarFallback className="bg-cyan-300/10 text-xs font-semibold text-cyan-200">{displayName.charAt(0).toUpperCase()}</AvatarFallback></Avatar><div className="min-w-0 flex-1 group-data-[collapsible=icon]:hidden"><p className="truncate text-sm font-medium text-slate-200">{displayName}</p><p className="mt-1 truncate text-xs text-slate-500">Investigator</p></div></button></DropdownMenuTrigger><DropdownMenuContent align="end" className="w-48"><DropdownMenuItem onClick={logout} className="cursor-pointer text-destructive focus:text-destructive"><LogOut className="mr-2 h-4 w-4" />Sign out</DropdownMenuItem></DropdownMenuContent></DropdownMenu> : null}
           </SidebarFooter>
         </Sidebar>
         <div className={`absolute right-0 top-0 z-50 h-full w-1 cursor-col-resize transition-colors hover:bg-cyan-300/30 ${isCollapsed ? "hidden" : ""}`} onMouseDown={() => setIsResizing(true)} />

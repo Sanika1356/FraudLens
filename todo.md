@@ -1,10 +1,10 @@
 # FraudLens — Planned Work
 
-This list contains only features that are not yet implemented.
+This list records the FraudLens product roadmap and its completion status.
 
 ## Identity, Access, and Workspaces
 
-- [ ] Add Clerk authentication with protected application routes, sign-up, sign-in, sign-out, password recovery, and social login.
+- [x] Add Clerk authentication with protected application routes, sign-up, sign-in, sign-out, password recovery, and social login.
 - [ ] Add `analyst`, `manager`, and `admin` roles with server-side authorization for transactions, cases, and model-monitoring views.
 - [ ] Add organization workspaces so each company or fraud team has isolated users, transactions, cases, metrics, and configuration.
 - [ ] Add administrator user-management controls for role changes, team invitations, account deactivation, and session revocation.
