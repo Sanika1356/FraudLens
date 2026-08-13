@@ -125,6 +125,33 @@ describe("Clerk-protected FraudLens APIs", () => {
     await expect(manager.risk.workload()).resolves.toMatchObject({ active: expect.any(Number) });
   });
 
+  it("records case workflow events in an immutable organization-scoped audit history", async () => {
+    const firstWorkspace = appRouter.createCaller(createContext(createUser("manager"), "org_audit_first"));
+    const secondWorkspace = appRouter.createCaller(createContext(createUser("manager"), "org_audit_second"));
+    const assessed = await firstWorkspace.risk.assess({
+      amount: 920,
+      merchantCategory: "electronics",
+      transactionCountry: "US",
+      accountCountry: "US",
+      deviceStatus: "new",
+      transactionHour: 1,
+      recentTransactionCount: 8,
+    });
+    await firstWorkspace.risk.updateCase({ id: assessed.id, caseStatus: "under_review", note: "Audit event verification." });
+
+    const firstHistory = await firstWorkspace.audit.list({ limit: 20 });
+    const secondHistory = await secondWorkspace.audit.list({ limit: 20 });
+
+    expect(firstHistory.map((event) => event.eventType)).toEqual(expect.arrayContaining(["case.assessment_created", "case.status_changed"]));
+    expect(secondHistory.some((event) => event.subjectId === String(assessed.id))).toBe(false);
+  });
+
+  it("prevents analysts from reading the manager-only audit history", async () => {
+    const caller = appRouter.createCaller(createContext(createUser("analyst"), "org_audit_restricted"));
+
+    await expect(caller.audit.list({ limit: 20 })).rejects.toMatchObject({ code: "FORBIDDEN" });
+  });
+
   it("prevents an analyst from viewing model-monitoring data", async () => {
     const caller = appRouter.createCaller(createContext(createUser("analyst")));
 

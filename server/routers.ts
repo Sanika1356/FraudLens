@@ -12,7 +12,7 @@ import {
   revokeMemberSessions,
   revokeOrganizationInvitation,
 } from "./adminManagement";
-import { getDb, persistTransaction } from "./db";
+import { getAuditEventsByOrganization, getDb, persistTransaction, recordAuditEvent } from "./db";
 import { demoTransactions, driftDemo, RiskRecord } from "./demoData";
 import { createInvestigatorSummary } from "./investigatorSummary";
 import { modelHealth } from "./modelData";
@@ -145,7 +145,30 @@ function buildOverview(records: RiskRecord[]) {
 export const appRouter = router({
   system: systemRouter,
   auth: router({
-    me: publicProcedure.query((opts) => opts.ctx.user),
+    me: publicProcedure.query(async ({ ctx }) => {
+      if (ctx.user && ctx.orgId) {
+        await recordAuditEvent({
+          orgId: ctx.orgId,
+          eventType: "authentication.workspace_accessed",
+          actorId: ctx.user.openId,
+          actorName: ctx.user.name ?? ctx.user.email,
+          subjectType: "workspace",
+          subjectId: ctx.orgId,
+          summary: "Authenticated user accessed the active workspace.",
+        });
+      }
+      return ctx.user;
+    }),
+  }),
+  audit: router({
+    list: organizationManagerProcedure.input(z.object({ limit: z.number().int().min(1).max(200).default(100) }).optional()).query(async ({ ctx, input }) => {
+      const events = await getAuditEventsByOrganization(ctx.orgId, input?.limit ?? 100);
+      return events.map((event) => {
+        let metadata: Record<string, unknown> = {};
+        try { metadata = JSON.parse(event.metadataJson) as Record<string, unknown>; } catch { /* preserve the event if legacy metadata is malformed */ }
+        return { ...event, metadata };
+      });
+    }),
   }),
   administration: router({
     directory: organizationAdministratorProcedure.query(({ ctx }) => getWorkspaceDirectory(ctx.orgId!)),
@@ -159,6 +182,7 @@ export const appRouter = router({
         emailAddress: input.emailAddress,
         role: input.organizationRole,
       });
+      await recordAuditEvent({ orgId: ctx.orgId!, eventType: "administration.member_invited", actorId: ctx.user!.openId, actorName: ctx.user!.name ?? ctx.user!.email, subjectType: "invitation", subjectId: invitation.id, summary: "Invited a member to the workspace.", metadata: { organizationRole: invitation.role } });
       return { id: invitation.id, email: invitation.emailAddress, role: invitation.role, status: invitation.status };
     }),
     updateOrganizationRole: organizationAdministratorProcedure.input(z.object({
@@ -171,7 +195,9 @@ export const appRouter = router({
         userId: input.userId,
         role: input.organizationRole,
       });
-      return { userId: membership.publicUserData?.userId ?? input.userId, organizationRole: membership.role };
+      const userId = membership.publicUserData?.userId ?? input.userId;
+      await recordAuditEvent({ orgId: ctx.orgId!, eventType: "administration.organization_role_changed", actorId: ctx.user!.openId, actorName: ctx.user!.name ?? ctx.user!.email, subjectType: "member", subjectId: userId, summary: "Changed a member's organization role.", metadata: { organizationRole: membership.role } });
+      return { userId, organizationRole: membership.role };
     }),
     updateFraudLensRole: organizationAdministratorProcedure.input(z.object({
       userId: z.string().trim().min(1).max(64),
@@ -183,25 +209,29 @@ export const appRouter = router({
         userId: input.userId,
         role: input.applicationRole,
       });
-      return { userId: input.userId, applicationRole: user?.role ?? input.applicationRole };
+      const applicationRole = user?.role ?? input.applicationRole;
+      await recordAuditEvent({ orgId: ctx.orgId!, eventType: "administration.application_role_changed", actorId: ctx.user!.openId, actorName: ctx.user!.name ?? ctx.user!.email, subjectType: "member", subjectId: input.userId, summary: "Changed a member's FraudLens role.", metadata: { applicationRole } });
+      return { userId: input.userId, applicationRole };
     }),
     deactivateMember: organizationAdministratorProcedure.input(z.object({
       userId: z.string().trim().min(1).max(64),
     })).mutation(async ({ ctx, input }) => {
       await deactivateOrganizationMember({ orgId: ctx.orgId!, actorUserId: ctx.user!.openId, userId: input.userId });
+      await recordAuditEvent({ orgId: ctx.orgId!, eventType: "administration.member_deactivated", actorId: ctx.user!.openId, actorName: ctx.user!.name ?? ctx.user!.email, subjectType: "member", subjectId: input.userId, summary: "Deactivated a member's access to this workspace." });
       return { userId: input.userId };
     }),
     revokeSessions: organizationAdministratorProcedure.input(z.object({
       userId: z.string().trim().min(1).max(64),
-    })).mutation(({ ctx, input }) => revokeMemberSessions({
-      orgId: ctx.orgId!,
-      actorUserId: ctx.user!.openId,
-      userId: input.userId,
-    })),
+    })).mutation(async ({ ctx, input }) => {
+      const result = await revokeMemberSessions({ orgId: ctx.orgId!, actorUserId: ctx.user!.openId, userId: input.userId });
+      await recordAuditEvent({ orgId: ctx.orgId!, eventType: "administration.sessions_revoked", actorId: ctx.user!.openId, actorName: ctx.user!.name ?? ctx.user!.email, subjectType: "member", subjectId: input.userId, summary: "Revoked a member's active sessions.", metadata: { revokedCount: result.revokedCount } });
+      return result;
+    }),
     revokeInvitation: organizationAdministratorProcedure.input(z.object({
       invitationId: z.string().trim().min(1).max(64),
     })).mutation(async ({ ctx, input }) => {
       await revokeOrganizationInvitation({ orgId: ctx.orgId!, actorUserId: ctx.user!.openId, invitationId: input.invitationId });
+      await recordAuditEvent({ orgId: ctx.orgId!, eventType: "administration.invitation_revoked", actorId: ctx.user!.openId, actorName: ctx.user!.name ?? ctx.user!.email, subjectType: "invitation", subjectId: input.invitationId, summary: "Revoked a pending workspace invitation." });
       return { invitationId: input.invitationId };
     }),
   }),
@@ -252,13 +282,16 @@ export const appRouter = router({
       };
       getRecords(ctx.orgId).unshift(record);
       await persistTransaction(ctx.orgId, asInsertTransaction(record));
+      await recordAuditEvent({ orgId: ctx.orgId, eventType: "case.assessment_created", actorId: ctx.user!.openId, actorName: ctx.user!.name ?? ctx.user!.email, subjectType: "case", subjectId: String(record.id), summary: `Created case ${record.reference} from a risk assessment.`, metadata: { riskLevel: record.riskLevel, casePriority: record.casePriority } });
       return record;
     }),
     updateCase: organizationProcedure.input(caseUpdateSchema).mutation(async ({ ctx, input }) => {
       const record = getRecord(ctx.orgId, input.id);
       if (!record) throw new Error("Transaction not found");
+      const previousStatus = record.caseStatus;
       applyCaseUpdate(record, input);
       await persistTransaction(ctx.orgId, asInsertTransaction(record));
+      await recordAuditEvent({ orgId: ctx.orgId, eventType: "case.status_changed", actorId: ctx.user!.openId, actorName: ctx.user!.name ?? ctx.user!.email, subjectType: "case", subjectId: String(record.id), summary: `Changed ${record.reference} from ${previousStatus} to ${record.caseStatus}.`, metadata: { previousStatus, caseStatus: record.caseStatus, noteAdded: Boolean(record.caseNote) } });
       return record;
     }),
     assignees: organizationProcedure.query(async ({ ctx }) => {
@@ -270,9 +303,11 @@ export const appRouter = router({
       if (!record) throw new Error("Transaction not found");
       if (record.caseStatus !== "under_review") throw new Error("Only active cases can be assigned.");
       if (record.assigneeId && record.assigneeId !== ctx.user!.openId) throw new Error("This case is already assigned to another investigator.");
+      const previousAssigneeId = record.assigneeId;
       record.assigneeId = ctx.user!.openId;
       record.assigneeName = ctx.user!.name ?? ctx.user!.email ?? "Assigned investigator";
       await persistTransaction(ctx.orgId, asInsertTransaction(record));
+      await recordAuditEvent({ orgId: ctx.orgId, eventType: "case.claimed", actorId: ctx.user!.openId, actorName: ctx.user!.name ?? ctx.user!.email, subjectType: "case", subjectId: String(record.id), summary: `Claimed case ${record.reference}.`, metadata: { previousAssigneeId, assigneeId: record.assigneeId } });
       return record;
     }),
     updateWorkflow: organizationManagerProcedure.input(caseWorkflowUpdateSchema).mutation(async ({ ctx, input }) => {
@@ -286,8 +321,10 @@ export const appRouter = router({
         if (!assignee) throw new Error("Select an active member of this organization as the assignee.");
         assigneeName = assignee.name ?? assignee.email ?? "Assigned investigator";
       }
+      const previous = { assigneeId: record.assigneeId, casePriority: record.casePriority, dueAt: record.dueAt?.toISOString() ?? null };
       applyCaseWorkflowUpdate(record, input, assigneeName);
       await persistTransaction(ctx.orgId, asInsertTransaction(record));
+      await recordAuditEvent({ orgId: ctx.orgId, eventType: "case.workflow_updated", actorId: ctx.user!.openId, actorName: ctx.user!.name ?? ctx.user!.email, subjectType: "case", subjectId: String(record.id), summary: `Updated assignment and service settings for ${record.reference}.`, metadata: { previous, assigneeId: record.assigneeId, casePriority: record.casePriority, dueAt: record.dueAt?.toISOString() ?? null } });
       return record;
     }),
     workload: organizationManagerProcedure.query(({ ctx }) => {

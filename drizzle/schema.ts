@@ -52,6 +52,20 @@ export const caseNotes = mysqlTable("caseNotes", {
   createdAt: timestamp("createdAt").defaultNow().notNull(),
 });
 
+export const auditEvents = mysqlTable("auditEvents", {
+  id: int("id").autoincrement().primaryKey(),
+  /** Clerk organization identifier for tenant-isolated, append-only activity history. */
+  orgId: varchar("orgId", { length: 64 }),
+  eventType: varchar("eventType", { length: 80 }).notNull(),
+  actorId: varchar("actorId", { length: 64 }),
+  actorName: varchar("actorName", { length: 160 }),
+  subjectType: varchar("subjectType", { length: 64 }),
+  subjectId: varchar("subjectId", { length: 80 }),
+  summary: text("summary").notNull(),
+  metadataJson: text("metadataJson").notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
 export const modelMetricSnapshots = mysqlTable("modelMetricSnapshots", {
   id: int("id").autoincrement().primaryKey(),
   /** Clerk organization identifier for workspace-level model metrics. */

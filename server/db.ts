@@ -1,9 +1,35 @@
 import { desc, eq } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
-import { InsertUser, InsertTransaction, transactions, users } from "../drizzle/schema";
+import { auditEvents, InsertUser, InsertTransaction, transactions, users } from "../drizzle/schema";
 import { ENV } from "./_core/env";
 
 let database: ReturnType<typeof drizzle> | null = null;
+
+export type AuditEventInput = {
+  orgId: string;
+  eventType: string;
+  actorId: string | null;
+  actorName: string | null;
+  subjectType: string | null;
+  subjectId: string | null;
+  summary: string;
+  metadata?: Record<string, unknown>;
+};
+
+export type AuditEventRecord = {
+  id: number;
+  orgId: string | null;
+  eventType: string;
+  actorId: string | null;
+  actorName: string | null;
+  subjectType: string | null;
+  subjectId: string | null;
+  summary: string;
+  metadataJson: string;
+  createdAt: Date;
+};
+
+const inMemoryAuditEvents = new Map<string, AuditEventRecord[]>();
 
 export async function getDb() {
   if (!database && process.env.DATABASE_URL) {
@@ -41,6 +67,38 @@ export async function getTransactionsByOrganization(orgId: string) {
   return db.select().from(transactions)
     .where(eq(transactions.orgId, orgId))
     .orderBy(desc(transactions.createdAt));
+}
+
+export async function recordAuditEvent(input: AuditEventInput): Promise<void> {
+  const metadataJson = JSON.stringify(input.metadata ?? {});
+  const db = await getDb();
+  if (!db) {
+    const organizationEvents = inMemoryAuditEvents.get(input.orgId) ?? [];
+    organizationEvents.unshift({ ...input, id: Date.now() + organizationEvents.length, metadataJson, createdAt: new Date() });
+    inMemoryAuditEvents.set(input.orgId, organizationEvents);
+    return;
+  }
+
+  const values = {
+    orgId: input.orgId,
+    eventType: input.eventType,
+    actorId: input.actorId,
+    actorName: input.actorName,
+    subjectType: input.subjectType,
+    subjectId: input.subjectId,
+    summary: input.summary,
+    metadataJson,
+  };
+  await db.insert(auditEvents).values(values);
+}
+
+export async function getAuditEventsByOrganization(orgId: string, limit = 100): Promise<AuditEventRecord[]> {
+  const db = await getDb();
+  if (!db) return (inMemoryAuditEvents.get(orgId) ?? []).slice(0, limit);
+  return db.select().from(auditEvents)
+    .where(eq(auditEvents.orgId, orgId))
+    .orderBy(desc(auditEvents.createdAt))
+    .limit(limit);
 }
 
 export async function persistTransaction(

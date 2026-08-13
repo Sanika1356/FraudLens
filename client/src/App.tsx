@@ -3,6 +3,7 @@ import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import {
   AdministratorManagementPage,
+  AuditLogPage,
   AssessmentPage,
   CaseQueuesPage,
   CommandCenterPage,
@@ -26,6 +27,7 @@ function WorkspaceRouter() {
       <Route path="/casework" component={CaseQueuesPage} />
       <Route path="/model-health" component={ModelHealthPage} />
       <Route path="/drift" component={DriftPage} />
+      <Route path="/audit" component={AuditLogPage} />
       <Route path="/team" component={AdministratorManagementPage} />
       <Route path="/404" component={NotFound} />
       <Route component={NotFound} />
