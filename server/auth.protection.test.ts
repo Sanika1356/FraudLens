@@ -146,6 +146,37 @@ describe("Clerk-protected FraudLens APIs", () => {
     expect(secondHistory.some((event) => event.subjectId === String(assessed.id))).toBe(false);
   });
 
+  it("stores investigator comments, tags, and evidence links only inside the active workspace", async () => {
+    const firstWorkspace = appRouter.createCaller(createContext(createUser("analyst"), "org_collaboration_first"));
+    const secondWorkspace = appRouter.createCaller(createContext(createUser("analyst"), "org_collaboration_second"));
+    const record = (await firstWorkspace.risk.list({}))[0];
+    if (!record) throw new Error("Expected a demo record");
+
+    await firstWorkspace.risk.addComment({ id: record.id, comment: "Escalated after verifying the device mismatch." });
+    await firstWorkspace.risk.setTags({ id: record.id, tags: ["device-mismatch", "repeat-activity"] });
+    await firstWorkspace.risk.addEvidenceLink({ id: record.id, label: "Verification record", url: "https://evidence.example.com/records/123" });
+
+    const firstCollaboration = await firstWorkspace.risk.collaboration({ id: record.id });
+    const secondCollaboration = await secondWorkspace.risk.collaboration({ id: record.id });
+
+    expect(firstCollaboration.comments.map((comment) => comment.note)).toContain("Escalated after verifying the device mismatch.");
+    expect(firstCollaboration.tags.map((tag) => tag.tag)).toEqual(expect.arrayContaining(["device-mismatch", "repeat-activity"]));
+    expect(firstCollaboration.evidence.map((evidence) => evidence.url)).toContain("https://evidence.example.com/records/123");
+    expect(firstCollaboration.activity.map((event) => event.eventType)).toEqual(expect.arrayContaining(["case.comment_added", "case.tags_updated", "case.evidence_link_added"]));
+    expect(secondCollaboration.comments).toHaveLength(0);
+    expect(secondCollaboration.tags).toHaveLength(0);
+    expect(secondCollaboration.evidence).toHaveLength(0);
+  });
+
+  it("requires a resolution reason before a case can be closed", async () => {
+    const caller = appRouter.createCaller(createContext(createUser("analyst"), "org_resolution_required"));
+    const record = (await caller.risk.list({ caseStatus: "under_review" }))[0];
+    if (!record) throw new Error("Expected an active demo case");
+
+    await expect(caller.risk.updateCase({ id: record.id, caseStatus: "legitimate", note: "Investigation completed with no fraud indicators." })).rejects.toThrow("Select a resolution reason before closing a case.");
+    await expect(caller.risk.updateCase({ id: record.id, caseStatus: "legitimate", note: "Investigation completed with no fraud indicators.", resolutionReasonCode: "customer_verified" })).resolves.toMatchObject({ resolutionReasonCode: "customer_verified" });
+  });
+
   it("prevents analysts from reading the manager-only audit history", async () => {
     const caller = appRouter.createCaller(createContext(createUser("analyst"), "org_audit_restricted"));
 

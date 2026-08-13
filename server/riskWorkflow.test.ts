@@ -46,13 +46,20 @@ describe("FraudLens workflow validation", () => {
       id: record.id,
       caseStatus: "legitimate",
       note: "  Verified against the account holder.  ",
+      resolutionReasonCode: "customer_verified",
     });
 
     const updated = applyCaseUpdate(record, parsed);
 
     expect(updated.caseStatus).toBe("legitimate");
     expect(updated.caseNote).toBe("Verified against the account holder.");
+    expect(updated.resolutionReasonCode).toBe("customer_verified");
     expect(updated.isNew).toBe(false);
+  });
+
+  it("accepts only defined resolution reason codes", () => {
+    expect(caseUpdateSchema.safeParse({ id: 7, caseStatus: "confirmed_fraud", note: "Validated fraud outcome.", resolutionReasonCode: "pattern_match" }).success).toBe(true);
+    expect(caseUpdateSchema.safeParse({ id: 7, caseStatus: "confirmed_fraud", note: "Validated fraud outcome.", resolutionReasonCode: "unverified" }).success).toBe(false);
   });
 
   it("sets ownership, priority, and a due date for an active case", () => {

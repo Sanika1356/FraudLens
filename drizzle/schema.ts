@@ -32,6 +32,8 @@ export const transactions = mysqlTable("transactions", {
   llmNextStep: text("llmNextStep"),
   caseStatus: mysqlEnum("caseStatus", ["under_review", "confirmed_fraud", "legitimate"]).default("under_review").notNull(),
   caseNote: text("caseNote"),
+  /** Standardized reason selected when a case is resolved. */
+  resolutionReasonCode: varchar("resolutionReasonCode", { length: 64 }),
   /** Current organization member responsible for an open case. */
   assigneeId: varchar("assigneeId", { length: 64 }),
   assigneeName: varchar("assigneeName", { length: 160 }),
@@ -48,7 +50,33 @@ export const caseNotes = mysqlTable("caseNotes", {
   orgId: varchar("orgId", { length: 64 }),
   transactionId: int("transactionId").notNull(),
   note: text("note").notNull(),
+  authorId: varchar("authorId", { length: 64 }),
   authorName: varchar("authorName", { length: 160 }).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export const caseTags = mysqlTable("caseTags", {
+  id: int("id").autoincrement().primaryKey(),
+  /** Clerk organization identifier used to keep case labels tenant-isolated. */
+  orgId: varchar("orgId", { length: 64 }),
+  transactionId: int("transactionId").notNull(),
+  tag: varchar("tag", { length: 48 }).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export const caseEvidence = mysqlTable("caseEvidence", {
+  id: int("id").autoincrement().primaryKey(),
+  /** Clerk organization identifier used to prevent cross-workspace evidence access. */
+  orgId: varchar("orgId", { length: 64 }),
+  transactionId: int("transactionId").notNull(),
+  label: varchar("label", { length: 160 }).notNull(),
+  evidenceType: mysqlEnum("evidenceType", ["link", "attachment"]).notNull(),
+  url: text("url").notNull(),
+  storageKey: varchar("storageKey", { length: 500 }),
+  fileName: varchar("fileName", { length: 255 }),
+  mimeType: varchar("mimeType", { length: 120 }),
+  addedById: varchar("addedById", { length: 64 }),
+  addedByName: varchar("addedByName", { length: 160 }),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
 });
 

@@ -1,6 +1,6 @@
-import { desc, eq } from "drizzle-orm";
+import { and, desc, eq } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
-import { auditEvents, InsertUser, InsertTransaction, transactions, users } from "../drizzle/schema";
+import { auditEvents, caseEvidence, caseNotes, caseTags, InsertUser, InsertTransaction, transactions, users } from "../drizzle/schema";
 import { ENV } from "./_core/env";
 
 let database: ReturnType<typeof drizzle> | null = null;
@@ -29,7 +29,39 @@ export type AuditEventRecord = {
   createdAt: Date;
 };
 
+export type CaseCommentInput = {
+  orgId: string;
+  transactionId: number;
+  note: string;
+  authorId: string | null;
+  authorName: string;
+};
+
+export type CaseCommentRecord = CaseCommentInput & { id: number; createdAt: Date };
+export type CaseTagRecord = { id: number; orgId: string | null; transactionId: number; tag: string; createdAt: Date };
+export type CaseEvidenceInput = {
+  orgId: string;
+  transactionId: number;
+  label: string;
+  evidenceType: "link" | "attachment";
+  url: string;
+  storageKey?: string | null;
+  fileName?: string | null;
+  mimeType?: string | null;
+  addedById: string | null;
+  addedByName: string | null;
+};
+export type CaseEvidenceRecord = CaseEvidenceInput & { id: number; createdAt: Date };
+
 const inMemoryAuditEvents = new Map<string, AuditEventRecord[]>();
+const inMemoryComments = new Map<string, CaseCommentRecord[]>();
+const inMemoryTags = new Map<string, CaseTagRecord[]>();
+const inMemoryEvidence = new Map<string, CaseEvidenceRecord[]>();
+let inMemoryCaseArtifactId = 1;
+
+function caseKey(orgId: string, transactionId: number) {
+  return `${orgId}:${transactionId}`;
+}
 
 export async function getDb() {
   if (!database && process.env.DATABASE_URL) {
@@ -79,7 +111,7 @@ export async function recordAuditEvent(input: AuditEventInput): Promise<void> {
     return;
   }
 
-  const values = {
+  await db.insert(auditEvents).values({
     orgId: input.orgId,
     eventType: input.eventType,
     actorId: input.actorId,
@@ -88,8 +120,7 @@ export async function recordAuditEvent(input: AuditEventInput): Promise<void> {
     subjectId: input.subjectId,
     summary: input.summary,
     metadataJson,
-  };
-  await db.insert(auditEvents).values(values);
+  });
 }
 
 export async function getAuditEventsByOrganization(orgId: string, limit = 100): Promise<AuditEventRecord[]> {
@@ -99,6 +130,71 @@ export async function getAuditEventsByOrganization(orgId: string, limit = 100): 
     .where(eq(auditEvents.orgId, orgId))
     .orderBy(desc(auditEvents.createdAt))
     .limit(limit);
+}
+
+export async function getCaseActivity(orgId: string, transactionId: number, limit = 100): Promise<AuditEventRecord[]> {
+  const subjectId = String(transactionId);
+  const db = await getDb();
+  if (!db) return (inMemoryAuditEvents.get(orgId) ?? []).filter((event) => event.subjectType === "case" && event.subjectId === subjectId).slice(0, limit);
+  return db.select().from(auditEvents)
+    .where(and(eq(auditEvents.orgId, orgId), eq(auditEvents.subjectType, "case"), eq(auditEvents.subjectId, subjectId)))
+    .orderBy(desc(auditEvents.createdAt))
+    .limit(limit);
+}
+
+export async function addCaseComment(input: CaseCommentInput): Promise<void> {
+  const db = await getDb();
+  if (!db) {
+    const key = caseKey(input.orgId, input.transactionId);
+    const comments = inMemoryComments.get(key) ?? [];
+    comments.unshift({ ...input, id: inMemoryCaseArtifactId++, createdAt: new Date() });
+    inMemoryComments.set(key, comments);
+    return;
+  }
+  await db.insert(caseNotes).values(input);
+}
+
+export async function replaceCaseTags(orgId: string, transactionId: number, tags: string[]): Promise<void> {
+  const uniqueTags = Array.from(new Set(tags.map((tag) => tag.trim().toLowerCase()).filter(Boolean)));
+  const db = await getDb();
+  if (!db) {
+    inMemoryTags.set(caseKey(orgId, transactionId), uniqueTags.map((tag) => ({ id: inMemoryCaseArtifactId++, orgId, transactionId, tag, createdAt: new Date() })));
+    return;
+  }
+  await db.delete(caseTags).where(and(eq(caseTags.orgId, orgId), eq(caseTags.transactionId, transactionId)));
+  if (uniqueTags.length) await db.insert(caseTags).values(uniqueTags.map((tag) => ({ orgId, transactionId, tag })));
+}
+
+export async function addCaseEvidence(input: CaseEvidenceInput): Promise<void> {
+  const db = await getDb();
+  if (!db) {
+    const key = caseKey(input.orgId, input.transactionId);
+    const evidence = inMemoryEvidence.get(key) ?? [];
+    evidence.unshift({ ...input, id: inMemoryCaseArtifactId++, createdAt: new Date() });
+    inMemoryEvidence.set(key, evidence);
+    return;
+  }
+  await db.insert(caseEvidence).values(input);
+}
+
+export async function getCaseCollaboration(orgId: string, transactionId: number) {
+  const db = await getDb();
+  if (!db) {
+    const key = caseKey(orgId, transactionId);
+    return {
+      comments: inMemoryComments.get(key) ?? [],
+      tags: inMemoryTags.get(key) ?? [],
+      evidence: inMemoryEvidence.get(key) ?? [],
+      activity: await getCaseActivity(orgId, transactionId),
+    };
+  }
+  const [comments, tags, evidence, activity] = await Promise.all([
+    db.select().from(caseNotes).where(and(eq(caseNotes.orgId, orgId), eq(caseNotes.transactionId, transactionId))).orderBy(desc(caseNotes.createdAt)),
+    db.select().from(caseTags).where(and(eq(caseTags.orgId, orgId), eq(caseTags.transactionId, transactionId))).orderBy(desc(caseTags.createdAt)),
+    db.select().from(caseEvidence).where(and(eq(caseEvidence.orgId, orgId), eq(caseEvidence.transactionId, transactionId))).orderBy(desc(caseEvidence.createdAt)),
+    getCaseActivity(orgId, transactionId),
+  ]);
+  return { comments, tags, evidence, activity };
 }
 
 export async function persistTransaction(
@@ -120,6 +216,7 @@ export async function persistTransaction(
         llmNextStep: organizationRecord.llmNextStep,
         caseStatus: organizationRecord.caseStatus,
         caseNote: organizationRecord.caseNote,
+        resolutionReasonCode: organizationRecord.resolutionReasonCode,
         assigneeId: organizationRecord.assigneeId,
         assigneeName: organizationRecord.assigneeName,
         casePriority: organizationRecord.casePriority,

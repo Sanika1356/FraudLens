@@ -12,7 +12,8 @@ import {
   revokeMemberSessions,
   revokeOrganizationInvitation,
 } from "./adminManagement";
-import { getAuditEventsByOrganization, getDb, persistTransaction, recordAuditEvent } from "./db";
+import { addCaseComment, addCaseEvidence, getAuditEventsByOrganization, getCaseCollaboration, getDb, persistTransaction, recordAuditEvent, replaceCaseTags } from "./db";
+import { storagePut } from "./storage";
 import { demoTransactions, driftDemo, RiskRecord } from "./demoData";
 import { createInvestigatorSummary } from "./investigatorSummary";
 import { modelHealth } from "./modelData";
@@ -28,10 +29,22 @@ export const riskInputSchema = z.object({
   recentTransactionCount: z.number().int().min(0).max(50),
 });
 
+export const RESOLUTION_REASON_CODES = [
+  "customer_dispute",
+  "pattern_match",
+  "account_takeover",
+  "merchant_confirmation",
+  "customer_verified",
+  "duplicate_alert",
+  "low_risk_pattern",
+  "other",
+] as const;
+
 export const caseUpdateSchema = z.object({
   id: z.number().int().positive(),
   caseStatus: z.enum(CASE_STATUSES),
   note: z.string().trim().min(3).max(1000),
+  resolutionReasonCode: z.enum(RESOLUTION_REASON_CODES).nullable().optional(),
 });
 
 export const CASE_PRIORITIES = ["critical", "high", "standard"] as const;
@@ -74,6 +87,7 @@ function getRecord(orgId: string, id: number) {
 export function applyCaseUpdate(record: RiskRecord, input: z.infer<typeof caseUpdateSchema>) {
   record.caseStatus = input.caseStatus;
   record.caseNote = input.note.trim();
+  record.resolutionReasonCode = input.caseStatus === "under_review" ? null : input.resolutionReasonCode ?? null;
   record.isNew = false;
   return record;
 }
@@ -117,6 +131,7 @@ function asInsertTransaction(record: RiskRecord) {
     llmNextStep: record.llmNextStep,
     caseStatus: record.caseStatus,
     caseNote: record.caseNote,
+    resolutionReasonCode: record.resolutionReasonCode,
     assigneeId: record.assigneeId,
     assigneeName: record.assigneeName,
     casePriority: record.casePriority,
@@ -270,6 +285,7 @@ export const appRouter = router({
         createdAt: new Date(),
         caseStatus: "under_review",
         caseNote: null,
+        resolutionReasonCode: null,
         assigneeId: null,
         assigneeName: null,
         casePriority: decision.riskLevel === "high" ? "critical" : decision.riskLevel === "medium" ? "high" : "standard",
@@ -288,11 +304,51 @@ export const appRouter = router({
     updateCase: organizationProcedure.input(caseUpdateSchema).mutation(async ({ ctx, input }) => {
       const record = getRecord(ctx.orgId, input.id);
       if (!record) throw new Error("Transaction not found");
+      if (input.caseStatus !== "under_review" && !input.resolutionReasonCode) throw new Error("Select a resolution reason before closing a case.");
       const previousStatus = record.caseStatus;
       applyCaseUpdate(record, input);
       await persistTransaction(ctx.orgId, asInsertTransaction(record));
-      await recordAuditEvent({ orgId: ctx.orgId, eventType: "case.status_changed", actorId: ctx.user!.openId, actorName: ctx.user!.name ?? ctx.user!.email, subjectType: "case", subjectId: String(record.id), summary: `Changed ${record.reference} from ${previousStatus} to ${record.caseStatus}.`, metadata: { previousStatus, caseStatus: record.caseStatus, noteAdded: Boolean(record.caseNote) } });
+      await addCaseComment({ orgId: ctx.orgId, transactionId: record.id, note: record.caseNote!, authorId: ctx.user!.openId, authorName: ctx.user!.name ?? ctx.user!.email ?? "Investigator" });
+      await recordAuditEvent({ orgId: ctx.orgId, eventType: "case.status_changed", actorId: ctx.user!.openId, actorName: ctx.user!.name ?? ctx.user!.email, subjectType: "case", subjectId: String(record.id), summary: `Changed ${record.reference} from ${previousStatus} to ${record.caseStatus}.`, metadata: { previousStatus, caseStatus: record.caseStatus, resolutionReasonCode: record.resolutionReasonCode, noteAdded: Boolean(record.caseNote) } });
       return record;
+    }),
+    collaboration: organizationProcedure.input(z.object({ id: z.number().int().positive() })).query(async ({ ctx, input }) => {
+      if (!getRecord(ctx.orgId, input.id)) throw new Error("Transaction not found");
+      return getCaseCollaboration(ctx.orgId, input.id);
+    }),
+    addComment: organizationProcedure.input(z.object({ id: z.number().int().positive(), comment: z.string().trim().min(1).max(2000) })).mutation(async ({ ctx, input }) => {
+      const record = getRecord(ctx.orgId, input.id);
+      if (!record) throw new Error("Transaction not found");
+      const actorName = ctx.user!.name ?? ctx.user!.email ?? "Investigator";
+      await addCaseComment({ orgId: ctx.orgId, transactionId: record.id, note: input.comment, authorId: ctx.user!.openId, authorName: actorName });
+      await recordAuditEvent({ orgId: ctx.orgId, eventType: "case.comment_added", actorId: ctx.user!.openId, actorName, subjectType: "case", subjectId: String(record.id), summary: `Added an investigator comment to ${record.reference}.` });
+      return { success: true };
+    }),
+    setTags: organizationProcedure.input(z.object({ id: z.number().int().positive(), tags: z.array(z.string().trim().min(1).max(48)).max(12) })).mutation(async ({ ctx, input }) => {
+      const record = getRecord(ctx.orgId, input.id);
+      if (!record) throw new Error("Transaction not found");
+      const tags = Array.from(new Set(input.tags.map((tag) => tag.toLowerCase())));
+      await replaceCaseTags(ctx.orgId, record.id, tags);
+      await recordAuditEvent({ orgId: ctx.orgId, eventType: "case.tags_updated", actorId: ctx.user!.openId, actorName: ctx.user!.name ?? ctx.user!.email, subjectType: "case", subjectId: String(record.id), summary: `Updated investigation tags for ${record.reference}.`, metadata: { tags } });
+      return { tags };
+    }),
+    addEvidenceLink: organizationProcedure.input(z.object({ id: z.number().int().positive(), label: z.string().trim().min(2).max(160), url: z.string().trim().url().refine((url) => url.startsWith("https://"), "Evidence links must use HTTPS.") })).mutation(async ({ ctx, input }) => {
+      const record = getRecord(ctx.orgId, input.id);
+      if (!record) throw new Error("Transaction not found");
+      await addCaseEvidence({ orgId: ctx.orgId, transactionId: record.id, label: input.label, evidenceType: "link", url: input.url, addedById: ctx.user!.openId, addedByName: ctx.user!.name ?? ctx.user!.email });
+      await recordAuditEvent({ orgId: ctx.orgId, eventType: "case.evidence_link_added", actorId: ctx.user!.openId, actorName: ctx.user!.name ?? ctx.user!.email, subjectType: "case", subjectId: String(record.id), summary: `Added an evidence link to ${record.reference}.`, metadata: { label: input.label } });
+      return { success: true };
+    }),
+    uploadEvidenceAttachment: organizationProcedure.input(z.object({ id: z.number().int().positive(), label: z.string().trim().min(2).max(160), fileName: z.string().trim().min(1).max(255), mimeType: z.enum(["application/pdf", "text/plain", "text/csv", "image/png", "image/jpeg"]), contentBase64: z.string().min(4).max(7_000_000) })).mutation(async ({ ctx, input }) => {
+      const record = getRecord(ctx.orgId, input.id);
+      if (!record) throw new Error("Transaction not found");
+      const content = Buffer.from(input.contentBase64, "base64");
+      if (!content.length || content.length > 5 * 1024 * 1024) throw new Error("Evidence attachments must be between 1 byte and 5 MB.");
+      const safeFileName = input.fileName.replace(/[^a-zA-Z0-9._-]/g, "_");
+      const stored = await storagePut(`evidence/${ctx.orgId}/${record.id}/${safeFileName}`, content, input.mimeType);
+      await addCaseEvidence({ orgId: ctx.orgId, transactionId: record.id, label: input.label, evidenceType: "attachment", url: stored.url, storageKey: stored.key, fileName: input.fileName, mimeType: input.mimeType, addedById: ctx.user!.openId, addedByName: ctx.user!.name ?? ctx.user!.email });
+      await recordAuditEvent({ orgId: ctx.orgId, eventType: "case.evidence_attachment_added", actorId: ctx.user!.openId, actorName: ctx.user!.name ?? ctx.user!.email, subjectType: "case", subjectId: String(record.id), summary: `Added an evidence attachment to ${record.reference}.`, metadata: { label: input.label, fileName: input.fileName, mimeType: input.mimeType } });
+      return { success: true };
     }),
     assignees: organizationProcedure.query(async ({ ctx }) => {
       const directory = await getWorkspaceDirectory(ctx.orgId);

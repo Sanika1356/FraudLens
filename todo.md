@@ -7,7 +7,6 @@ This list contains only FraudLens work that remains to be implemented.
 
 ## Investigation Workflow and Data Operations
 
-- [ ] Expand the investigator workspace with case comments, tags, evidence links, attachments, resolution reason codes, and a chronological activity timeline.
 - [ ] Build CSV transaction import with schema validation, row-level error reporting, import summaries, duplicate detection, and bulk risk scoring.
 - [ ] Add secure evidence-file storage for investigator attachments, imported files, and exported reports using Amazon S3 or Cloudflare R2.
 
