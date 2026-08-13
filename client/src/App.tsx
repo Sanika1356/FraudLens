@@ -15,6 +15,7 @@ import {
   TransactionDetailPage,
   TransactionImportPage,
   TransactionsPage,
+  WeeklySummarySettingsPage,
 } from "@/pages/FraudLensPages";
 import NotFound from "@/pages/NotFound";
 import { Redirect, Route, Switch } from "wouter";
@@ -34,6 +35,7 @@ function WorkspaceRouter() {
       <Route path="/drift" component={DriftPage} />
       <Route path="/audit" component={AuditLogPage} />
       <Route path="/alerts" component={NotificationSettingsPage} />
+      <Route path="/weekly-summaries" component={WeeklySummarySettingsPage} />
       <Route path="/reports" component={ReportsPage} />
       <Route path="/api" component={ApiIntegrationsPage} />
       <Route path="/team" component={AdministratorManagementPage} />

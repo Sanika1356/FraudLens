@@ -3,11 +3,12 @@ import { demoTransactions } from "./demoData";
 import { parseCsvImport } from "./csvImport";
 import { decodeAndValidateEvidenceAttachment } from "./evidenceFiles";
 import { createEvidenceStorageKey } from "./storage";
-import { applyCaseUpdate, applyCaseWorkflowUpdate, caseUpdateSchema, caseWorkflowUpdateSchema, notificationPreferencesSchema, reportFiltersSchema, riskInputSchema } from "./routers";
+import { applyCaseUpdate, applyCaseWorkflowUpdate, caseUpdateSchema, caseWorkflowUpdateSchema, notificationPreferencesSchema, reportFiltersSchema, riskInputSchema, weeklySummaryPreferencesSchema } from "./routers";
 import { shouldSendHighRiskAlert } from "./notifications";
 import { buildModelQualityReport, classifyOutcome } from "./outcomeFeedback";
 import { buildOperationalReport, reportToCsv, reportToText } from "./reports";
 import { PUBLIC_API_KEY_SCOPE, apiKeysMatch, createApiKeySecret, extractBearerApiKey, isApiKeyActive, parseApiKeyScopes } from "./apiKeys";
+import { previousWeekWindow } from "./weeklySummaries";
 
 describe("FraudLens workflow validation", () => {
   it("rejects unsafe manual assessment inputs before scoring", () => {
@@ -160,6 +161,25 @@ describe("FraudLens workflow validation", () => {
     expect(missingEmail.success).toBe(false);
     expect(unsafeSlack.success).toBe(false);
     expect(valid.success).toBe(true);
+  });
+
+  it("requires a valid recipient before enabling automatic weekly summaries", () => {
+    const missingRecipient = weeklySummaryPreferencesSchema.safeParse({ enabled: true, toEmail: null });
+    const invalidRecipient = weeklySummaryPreferencesSchema.safeParse({ enabled: true, toEmail: "not-an-email" });
+    const disabledWithoutRecipient = weeklySummaryPreferencesSchema.safeParse({ enabled: false, toEmail: null });
+    const enabledWithRecipient = weeklySummaryPreferencesSchema.safeParse({ enabled: true, toEmail: "fraud-operations@example.com" });
+
+    expect(missingRecipient.success).toBe(false);
+    expect(invalidRecipient.success).toBe(false);
+    expect(disabledWithoutRecipient.success).toBe(true);
+    expect(enabledWithRecipient.success).toBe(true);
+  });
+
+  it("selects the complete previous Monday-to-Sunday reporting period in UTC", () => {
+    const window = previousWeekWindow(new Date("2026-08-17T15:30:00.000Z"));
+
+    expect(window.periodStart.toISOString()).toBe("2026-08-10T00:00:00.000Z");
+    expect(window.periodEnd.toISOString()).toBe("2026-08-16T23:59:59.999Z");
   });
 
   it("classifies confirmed case outcomes against the high-risk model decision boundary", () => {

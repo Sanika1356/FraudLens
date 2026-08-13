@@ -1,6 +1,6 @@
 import { and, count, desc, eq, gte } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
-import { apiKeys, apiRequestLogs, auditEvents, caseEvidence, caseNotes, caseTags, InsertUser, InsertTransaction, notificationPreferences, outcomeFeedback, transactions, users } from "../drizzle/schema";
+import { apiKeys, apiRequestLogs, auditEvents, caseEvidence, caseNotes, caseTags, InsertUser, InsertTransaction, notificationPreferences, outcomeFeedback, transactions, users, weeklySummaryDeliveries, weeklySummaryPreferences } from "../drizzle/schema";
 import type { ActualOutcome, OutcomeClassification } from "./outcomeFeedback";
 import { ENV } from "./_core/env";
 
@@ -117,6 +117,34 @@ export type ApiRequestLogInput = {
 };
 export type ApiRequestLogRecord = ApiRequestLogInput & { id: number; createdAt: Date };
 
+export type WeeklySummaryPreferencesInput = {
+  enabled: boolean;
+  toEmail: string | null;
+};
+
+export type WeeklySummaryPreferencesRecord = WeeklySummaryPreferencesInput & {
+  id: number;
+  orgId: string;
+  updatedAt: Date;
+};
+
+export type WeeklySummaryDeliveryInput = {
+  orgId: string;
+  periodStart: Date;
+  recipient: string;
+  resendEmailId?: string | null;
+};
+
+export type WeeklySummaryDeliveryRecord = WeeklySummaryDeliveryInput & {
+  id: number;
+  sentAt: Date;
+};
+
+export const DEFAULT_WEEKLY_SUMMARY_PREFERENCES: WeeklySummaryPreferencesInput = {
+  enabled: false,
+  toEmail: null,
+};
+
 export const DEFAULT_NOTIFICATION_PREFERENCES: NotificationPreferencesInput = {
   emailEnabled: false,
   toEmail: null,
@@ -135,9 +163,12 @@ const inMemoryNotificationPreferences = new Map<string, NotificationPreferencesR
 const inMemoryOutcomeFeedback = new Map<string, OutcomeFeedbackRecord>();
 const inMemoryApiKeys = new Map<number, ApiKeyRecord>();
 const inMemoryApiRequestLogs: ApiRequestLogRecord[] = [];
+const inMemoryWeeklySummaryPreferences = new Map<string, WeeklySummaryPreferencesRecord>();
+const inMemoryWeeklySummaryDeliveries: WeeklySummaryDeliveryRecord[] = [];
 let inMemoryCaseArtifactId = 1;
 let inMemoryApiKeyId = 1;
 let inMemoryApiRequestLogId = 1;
+let inMemoryWeeklySummaryId = 1;
 
 function caseKey(orgId: string, transactionId: number) {
   return `${orgId}:${transactionId}`;
@@ -397,6 +428,89 @@ export async function getApiRequestLogsByOrganization(orgId: string, limit = 100
   const db = await getDb();
   if (!db) return inMemoryApiRequestLogs.filter((entry) => entry.orgId === orgId).slice(-limit).reverse();
   return db.select().from(apiRequestLogs).where(eq(apiRequestLogs.orgId, orgId)).orderBy(desc(apiRequestLogs.createdAt)).limit(limit);
+}
+
+export async function getWeeklySummaryPreferences(orgId: string): Promise<WeeklySummaryPreferencesRecord> {
+  const db = await getDb();
+  if (!db) {
+    return inMemoryWeeklySummaryPreferences.get(orgId) ?? {
+      id: 0,
+      orgId,
+      ...DEFAULT_WEEKLY_SUMMARY_PREFERENCES,
+      updatedAt: new Date(),
+    };
+  }
+
+  const rows = await db.select().from(weeklySummaryPreferences)
+    .where(eq(weeklySummaryPreferences.orgId, orgId))
+    .limit(1);
+  return rows[0] ?? {
+    id: 0,
+    orgId,
+    ...DEFAULT_WEEKLY_SUMMARY_PREFERENCES,
+    updatedAt: new Date(),
+  };
+}
+
+export async function upsertWeeklySummaryPreferences(
+  orgId: string,
+  preferences: WeeklySummaryPreferencesInput,
+): Promise<WeeklySummaryPreferencesRecord> {
+  const db = await getDb();
+  if (!db) {
+    const existing = inMemoryWeeklySummaryPreferences.get(orgId);
+    const saved: WeeklySummaryPreferencesRecord = {
+      id: existing?.id ?? Date.now(),
+      orgId,
+      ...preferences,
+      updatedAt: new Date(),
+    };
+    inMemoryWeeklySummaryPreferences.set(orgId, saved);
+    return saved;
+  }
+
+  await db.insert(weeklySummaryPreferences).values({ orgId, ...preferences }).onDuplicateKeyUpdate({
+    set: { ...preferences, updatedAt: new Date() },
+  });
+  return getWeeklySummaryPreferences(orgId);
+}
+
+export async function getEnabledWeeklySummaryPreferences(): Promise<WeeklySummaryPreferencesRecord[]> {
+  const db = await getDb();
+  if (!db) {
+    return Array.from(inMemoryWeeklySummaryPreferences.values())
+      .filter((preferences) => preferences.enabled && Boolean(preferences.toEmail));
+  }
+  return db.select().from(weeklySummaryPreferences)
+    .where(and(eq(weeklySummaryPreferences.enabled, true), gte(weeklySummaryPreferences.toEmail, "")));
+}
+
+export async function hasWeeklySummaryDelivery(orgId: string, periodStart: Date): Promise<boolean> {
+  const db = await getDb();
+  if (!db) {
+    return inMemoryWeeklySummaryDeliveries.some((delivery) => delivery.orgId === orgId && delivery.periodStart.getTime() === periodStart.getTime());
+  }
+  const rows = await db.select({ id: weeklySummaryDeliveries.id }).from(weeklySummaryDeliveries)
+    .where(and(eq(weeklySummaryDeliveries.orgId, orgId), eq(weeklySummaryDeliveries.periodStart, periodStart)))
+    .limit(1);
+  return Boolean(rows[0]);
+}
+
+export async function recordWeeklySummaryDelivery(input: WeeklySummaryDeliveryInput): Promise<void> {
+  const db = await getDb();
+  if (!db) {
+    inMemoryWeeklySummaryDeliveries.push({
+      ...input,
+      resendEmailId: input.resendEmailId ?? null,
+      id: inMemoryWeeklySummaryId++,
+      sentAt: new Date(),
+    });
+    return;
+  }
+  await db.insert(weeklySummaryDeliveries).values({
+    ...input,
+    resendEmailId: input.resendEmailId ?? null,
+  });
 }
 
 export async function recordAuditEvent(input: AuditEventInput): Promise<void> {

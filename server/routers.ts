@@ -12,7 +12,7 @@ import {
   revokeMemberSessions,
   revokeOrganizationInvitation,
 } from "./adminManagement";
-import { addCaseComment, addCaseEvidence, createApiKey, deleteOutcomeFeedback, getApiKeysByOrganization, getApiRequestLogsByOrganization, getAuditEventsByOrganization, getCaseCollaboration, getDb, getNotificationPreferences, getOutcomeFeedbackByOrganization, getTransactionReferencesByOrganization, persistTransaction, recordAuditEvent, replaceCaseTags, revokeApiKey, upsertNotificationPreferences, upsertOutcomeFeedback } from "./db";
+import { addCaseComment, addCaseEvidence, createApiKey, deleteOutcomeFeedback, getApiKeysByOrganization, getApiRequestLogsByOrganization, getAuditEventsByOrganization, getCaseCollaboration, getDb, getNotificationPreferences, getOutcomeFeedbackByOrganization, getTransactionReferencesByOrganization, getWeeklySummaryPreferences, persistTransaction, recordAuditEvent, replaceCaseTags, revokeApiKey, upsertNotificationPreferences, upsertOutcomeFeedback, upsertWeeklySummaryPreferences } from "./db";
 import { createEvidenceStorageKey, isSupabaseStorageConfigured, storageDelete, storagePut } from "./storage";
 import { decodeAndValidateEvidenceAttachment } from "./evidenceFiles";
 import { demoTransactions, driftDemo, RiskRecord } from "./demoData";
@@ -66,6 +66,15 @@ export const notificationPreferencesSchema = z.object({
   if (preferences.slackEnabled && !preferences.slackWebhookUrl) context.addIssue({ code: z.ZodIssueCode.custom, path: ["slackWebhookUrl"], message: "Provide a Slack webhook URL before enabling Slack alerts." });
   if (preferences.teamsEnabled && !preferences.teamsWebhookUrl) context.addIssue({ code: z.ZodIssueCode.custom, path: ["teamsWebhookUrl"], message: "Provide a Teams workflow URL before enabling Teams alerts." });
 });
+export const weeklySummaryPreferencesSchema = z.object({
+  enabled: z.boolean(),
+  toEmail: z.string().trim().email().max(320).nullable(),
+}).superRefine((preferences, context) => {
+  if (preferences.enabled && !preferences.toEmail) {
+    context.addIssue({ code: z.ZodIssueCode.custom, path: ["toEmail"], message: "Provide an email recipient before enabling weekly summaries." });
+  }
+});
+
 export const caseWorkflowUpdateSchema = z.object({
   id: z.number().int().positive(),
   assigneeId: z.string().trim().min(1).max(64).nullable(),
@@ -321,6 +330,23 @@ export const appRouter = router({
         metadata: { channels: channels ?? ALERT_CHANNELS, results: results.map((result) => ({ channel: result.channel, status: result.status })) },
       });
       return { results };
+    }),
+  }),
+  weeklySummaries: router({
+    get: organizationManagerProcedure.query(({ ctx }) => getWeeklySummaryPreferences(ctx.orgId)),
+    update: organizationManagerProcedure.input(weeklySummaryPreferencesSchema).mutation(async ({ ctx, input }) => {
+      const preferences = await upsertWeeklySummaryPreferences(ctx.orgId, input);
+      await recordAuditEvent({
+        orgId: ctx.orgId,
+        eventType: "weekly_summary.preferences_updated",
+        actorId: ctx.user!.openId,
+        actorName: ctx.user!.name ?? ctx.user!.email,
+        subjectType: "weekly_summary_preferences",
+        subjectId: String(preferences.id),
+        summary: `${preferences.enabled ? "Enabled" : "Disabled"} automatic weekly risk summaries.`,
+        metadata: { enabled: preferences.enabled, hasRecipient: Boolean(preferences.toEmail) },
+      });
+      return preferences;
     }),
   }),
   apiKeys: router({

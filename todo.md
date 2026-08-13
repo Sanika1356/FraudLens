@@ -8,10 +8,6 @@ This list contains only FraudLens work that remains to be implemented.
 ## Investigation Workflow and Data Operations
 
 
-## Alerts, Reporting, and Model Oversight
-
-- [ ] Add automatic weekly risk-summary delivery after deployment, using the completed reporting dashboard and export data.
-
 ## Deployment, Reliability, and Engineering Quality
 
 - [ ] Deploy FraudLens to Railway from GitHub with production environment variables, a managed database connection, custom domain support, and release verification.

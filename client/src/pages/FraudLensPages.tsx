@@ -35,6 +35,7 @@ type AssessmentForm = {
   transactionHour: string;
   recentTransactionCount: string;
 };
+type WeeklySummaryForm = { enabled: boolean; toEmail: string };
 
 const riskStyle: Record<RiskLevel, string> = {
   high: "border-rose-300/20 bg-rose-300/10 text-rose-200",
@@ -607,6 +608,48 @@ export function NotificationSettingsPage() {
         <NotificationChannelCard title="Slack" description="Post high-risk alerts to a Slack channel using an incoming webhook URL created for that channel." enabled={form.slackEnabled} onEnabledChange={(slackEnabled) => updateForm({ slackEnabled })} inputLabel="Slack incoming webhook URL" inputValue={form.slackWebhookUrl} onInputChange={(slackWebhookUrl) => updateForm({ slackWebhookUrl })} placeholder="https://hooks.slack.com/services/…" testLabel="Test Slack" onTest={() => testAlert.mutate({ channel: "slack" })} isTesting={testAlert.isPending} />
         <NotificationChannelCard title="Microsoft Teams" description="Post alerts through a Teams workflow webhook. Use a current Power Automate/Workflows URL for new configurations." enabled={form.teamsEnabled} onEnabledChange={(teamsEnabled) => updateForm({ teamsEnabled })} inputLabel="Teams workflow webhook URL" inputValue={form.teamsWebhookUrl} onInputChange={(teamsWebhookUrl) => updateForm({ teamsWebhookUrl })} placeholder="https://…logic.azure.com/…" testLabel="Test Teams" onTest={() => testAlert.mutate({ channel: "teams" })} isTesting={testAlert.isPending} />
       </div></div></Frame>;
+}
+
+export function WeeklySummarySettingsPage() {
+  const { user } = useAuth();
+  const utils = trpc.useUtils();
+  const preferences = trpc.weeklySummaries.get.useQuery();
+  const [form, setForm] = useState<WeeklySummaryForm>({ enabled: false, toEmail: "" });
+  const [initialized, setInitialized] = useState(false);
+
+  useEffect(() => {
+    if (!preferences.data || initialized) return;
+    setForm({ enabled: preferences.data.enabled, toEmail: preferences.data.toEmail ?? "" });
+    setInitialized(true);
+  }, [initialized, preferences.data]);
+
+  const save = trpc.weeklySummaries.update.useMutation({
+    onSuccess: (saved) => {
+      setForm({ enabled: saved.enabled, toEmail: saved.toEmail ?? "" });
+      utils.weeklySummaries.get.invalidate();
+      toast.success("Weekly summary settings saved", {
+        description: saved.enabled
+          ? `Risk summaries will be sent to ${saved.toEmail} every Monday.`
+          : "Automatic weekly risk summary delivery is disabled.",
+      });
+    },
+    onError: (error) => toast.error("Unable to save weekly summary settings", { description: error.message }),
+  });
+
+  const saveSettings = () => save.mutate({ enabled: form.enabled, toEmail: form.toEmail.trim() || null });
+
+  if (user?.role === "analyst") return <Frame><PageTitle eyebrow="Scheduled reporting" title="Manager access required" /><QueryState state="error" label="Only managers and administrators can configure automatic weekly summaries." /></Frame>;
+  if (preferences.isLoading) return <Frame><PageTitle eyebrow="Scheduled reporting" title="Weekly summaries" /><QueryState state="loading" label="Loading weekly summary settings…" /></Frame>;
+  if (preferences.error) return <Frame><PageTitle eyebrow="Scheduled reporting" title="Weekly summaries" /><QueryState state="error" label="Unable to load weekly summary settings. Refresh the page and try again." /></Frame>;
+
+  return <Frame><PageTitle eyebrow="Scheduled reporting" title="Weekly risk summaries"><Button onClick={saveSettings} disabled={save.isPending} className="bg-cyan-300 text-slate-950 hover:bg-cyan-200"><CheckCircle2 className="mr-2 h-4 w-4" />{save.isPending ? "Saving…" : "Save weekly summary settings"}</Button></PageTitle>
+    <div className="grid gap-6 xl:grid-cols-[1.05fr_0.95fr]"><Panel className={form.enabled ? "border-cyan-300/25" : ""}><div className="flex flex-col gap-5 sm:flex-row sm:items-start sm:justify-between"><div><div className="flex items-center gap-3"><div className={`rounded-xl p-2.5 ${form.enabled ? "bg-cyan-300/10 text-cyan-200" : "bg-white/[0.04] text-slate-500"}`}><CalendarClock className="h-5 w-5" /></div><div><p className="text-sm font-semibold text-slate-100">Automatic delivery</p><p className="mt-1 text-sm leading-6 text-slate-500">Send a concise operational risk report for the previous calendar week.</p></div></div></div><label className="inline-flex cursor-pointer items-center gap-2 self-start rounded-full border border-white/10 bg-[#07111e] px-3 py-2 text-xs font-semibold text-slate-300"><input type="checkbox" checked={form.enabled} onChange={(event) => setForm((current) => ({ ...current, enabled: event.target.checked }))} className="h-4 w-4 accent-cyan-300" /><span>{form.enabled ? "Enabled" : "Disabled"}</span></label></div>
+      <div className="mt-7"><label htmlFor="weekly-summary-recipient" className="text-xs font-medium text-slate-400">Recipient email address</label><Input id="weekly-summary-recipient" type="email" value={form.toEmail} onChange={(event) => setForm((current) => ({ ...current, toEmail: event.target.value }))} placeholder="fraud-operations@example.com" className="mt-2 border-white/10 bg-[#07111e] text-slate-200 placeholder:text-slate-600 focus-visible:ring-cyan-300" /><p className="mt-2 text-xs leading-5 text-slate-500">An email address is required when automatic delivery is enabled.</p></div></Panel>
+      <div className="space-y-6"><Panel><Eyebrow>Delivery schedule</Eyebrow><div className="mt-4 flex items-start gap-3"><div className="rounded-xl bg-violet-300/10 p-2.5 text-violet-200"><CalendarClock className="h-5 w-5" /></div><div><p className="text-sm font-semibold text-slate-100">Every Monday at 08:00 UTC</p><p className="mt-1 text-sm leading-6 text-slate-500">The report covers the complete prior Monday–Sunday period in UTC. A delivery record prevents duplicate emails if the scheduled job is retried.</p></div></div></Panel>
+        <Panel><Eyebrow>Report contents</Eyebrow><ul className="mt-4 space-y-3 text-sm leading-6 text-slate-400"><li>Risk distribution, alert volume, and new high-risk cases for the reporting period.</li><li>Case workflow, investigator workload, and outcome feedback trends from operational reporting.</li><li>Only the configured recipient receives the report for this workspace.</li></ul></Panel></div>
+    </div>
+    <div className="mt-6 rounded-xl border border-amber-300/15 bg-amber-300/[0.055] px-4 py-3 text-sm leading-6 text-amber-100"><AlertTriangle className="mr-2 inline h-4 w-4 text-amber-200" /><span className="font-semibold">Delivery dependency.</span> Weekly delivery runs through the repository’s scheduled workflow, so the deployment must have database and email-service secrets configured before enabling summaries.</div>
+  </Frame>;
 }
 
 function downloadReportFile(file: { fileName: string; content: string; contentType: string }) {

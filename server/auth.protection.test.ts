@@ -257,6 +257,41 @@ describe("Clerk-protected FraudLens APIs", () => {
     })).resolves.toMatchObject({ orgId: "org_notification_access", riskThreshold: 74 });
   });
 
+  it("requires manager access and an active organization for weekly summary preferences", async () => {
+    const analyst = appRouter.createCaller(createContext(createUser("analyst"), "org_weekly_summary_access"));
+    const managerWithoutWorkspace = appRouter.createCaller(createContext(createUser("manager"), null));
+    const manager = appRouter.createCaller(createContext(createUser("manager"), "org_weekly_summary_access"));
+
+    await expect(analyst.weeklySummaries.get()).rejects.toMatchObject({ code: "FORBIDDEN" });
+    await expect(managerWithoutWorkspace.weeklySummaries.get()).rejects.toMatchObject({
+      code: "UNAUTHORIZED",
+      message: "Select an active organization workspace to access this data.",
+    });
+    await expect(manager.weeklySummaries.update({ enabled: true, toEmail: "fraud-operations@example.com" })).resolves.toMatchObject({
+      orgId: "org_weekly_summary_access",
+      enabled: true,
+      toEmail: "fraud-operations@example.com",
+    });
+  });
+
+  it("keeps weekly summary preferences isolated to their active organization", async () => {
+    const firstWorkspace = appRouter.createCaller(createContext(createUser("manager"), "org_weekly_summary_first"));
+    const secondWorkspace = appRouter.createCaller(createContext(createUser("manager"), "org_weekly_summary_second"));
+
+    await firstWorkspace.weeklySummaries.update({ enabled: true, toEmail: "first-workspace@example.com" });
+
+    await expect(firstWorkspace.weeklySummaries.get()).resolves.toMatchObject({
+      orgId: "org_weekly_summary_first",
+      enabled: true,
+      toEmail: "first-workspace@example.com",
+    });
+    await expect(secondWorkspace.weeklySummaries.get()).resolves.toMatchObject({
+      orgId: "org_weekly_summary_second",
+      enabled: false,
+      toEmail: null,
+    });
+  });
+
   it("keeps notification preferences isolated to their active organization", async () => {
     const firstWorkspace = appRouter.createCaller(createContext(createUser("manager"), "org_notification_first"));
     const secondWorkspace = appRouter.createCaller(createContext(createUser("manager"), "org_notification_second"));

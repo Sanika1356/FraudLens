@@ -166,6 +166,29 @@ export const apiRequestLogs = mysqlTable("apiRequestLogs", {
   index("api_request_logs_key_created_idx").on(table.apiKeyId, table.createdAt),
 ]);
 
+export const weeklySummaryPreferences = mysqlTable("weeklySummaryPreferences", {
+  id: int("id").autoincrement().primaryKey(),
+  /** Exactly one weekly-summary configuration is permitted per organization. */
+  orgId: varchar("orgId", { length: 64 }).notNull().unique(),
+  enabled: boolean("enabled").default(false).notNull(),
+  /** Report recipient is kept separate from high-risk alert recipients. */
+  toEmail: varchar("toEmail", { length: 320 }),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export const weeklySummaryDeliveries = mysqlTable("weeklySummaryDeliveries", {
+  id: int("id").autoincrement().primaryKey(),
+  /** A successful weekly report is recorded once per organization and reporting period. */
+  orgId: varchar("orgId", { length: 64 }).notNull(),
+  periodStart: timestamp("periodStart").notNull(),
+  recipient: varchar("recipient", { length: 320 }).notNull(),
+  resendEmailId: varchar("resendEmailId", { length: 128 }),
+  sentAt: timestamp("sentAt").defaultNow().notNull(),
+}, (table) => [
+  uniqueIndex("weekly_summary_deliveries_org_period_unique").on(table.orgId, table.periodStart),
+  index("weekly_summary_deliveries_org_sent_idx").on(table.orgId, table.sentAt),
+]);
+
 export const modelMetricSnapshots = mysqlTable("modelMetricSnapshots", {
   id: int("id").autoincrement().primaryKey(),
   /** Clerk organization identifier for workspace-level model metrics. */
@@ -206,3 +229,7 @@ export type ApiKey = typeof apiKeys.$inferSelect;
 export type InsertApiKey = typeof apiKeys.$inferInsert;
 export type ApiRequestLog = typeof apiRequestLogs.$inferSelect;
 export type InsertApiRequestLog = typeof apiRequestLogs.$inferInsert;
+export type WeeklySummaryPreferences = typeof weeklySummaryPreferences.$inferSelect;
+export type InsertWeeklySummaryPreferences = typeof weeklySummaryPreferences.$inferInsert;
+export type WeeklySummaryDelivery = typeof weeklySummaryDeliveries.$inferSelect;
+export type InsertWeeklySummaryDelivery = typeof weeklySummaryDeliveries.$inferInsert;
