@@ -1,6 +1,17 @@
 import { z } from "zod";
 import { systemRouter } from "./_core/systemRouter";
-import { organizationManagerProcedure, organizationProcedure, publicProcedure, router } from "./_core/trpc";
+import { organizationAdministratorProcedure, organizationManagerProcedure, organizationProcedure, publicProcedure, router } from "./_core/trpc";
+import {
+  FRAUDLENS_ROLES,
+  ORGANIZATION_MEMBERSHIP_ROLES,
+  changeFraudLensRole,
+  changeOrganizationMembershipRole,
+  deactivateOrganizationMember,
+  getWorkspaceDirectory,
+  inviteOrganizationMember,
+  revokeMemberSessions,
+  revokeOrganizationInvitation,
+} from "./adminManagement";
 import { getDb, persistTransaction } from "./db";
 import { demoTransactions, driftDemo, RiskRecord } from "./demoData";
 import { createInvestigatorSummary } from "./investigatorSummary";
@@ -110,6 +121,64 @@ export const appRouter = router({
   system: systemRouter,
   auth: router({
     me: publicProcedure.query((opts) => opts.ctx.user),
+  }),
+  administration: router({
+    directory: organizationAdministratorProcedure.query(({ ctx }) => getWorkspaceDirectory(ctx.orgId!)),
+    invite: organizationAdministratorProcedure.input(z.object({
+      emailAddress: z.string().trim().email().max(320),
+      organizationRole: z.enum(ORGANIZATION_MEMBERSHIP_ROLES),
+    })).mutation(async ({ ctx, input }) => {
+      const invitation = await inviteOrganizationMember({
+        orgId: ctx.orgId!,
+        inviterUserId: ctx.user!.openId,
+        emailAddress: input.emailAddress,
+        role: input.organizationRole,
+      });
+      return { id: invitation.id, email: invitation.emailAddress, role: invitation.role, status: invitation.status };
+    }),
+    updateOrganizationRole: organizationAdministratorProcedure.input(z.object({
+      userId: z.string().trim().min(1).max(64),
+      organizationRole: z.enum(ORGANIZATION_MEMBERSHIP_ROLES),
+    })).mutation(async ({ ctx, input }) => {
+      const membership = await changeOrganizationMembershipRole({
+        orgId: ctx.orgId!,
+        actorUserId: ctx.user!.openId,
+        userId: input.userId,
+        role: input.organizationRole,
+      });
+      return { userId: membership.publicUserData?.userId ?? input.userId, organizationRole: membership.role };
+    }),
+    updateFraudLensRole: organizationAdministratorProcedure.input(z.object({
+      userId: z.string().trim().min(1).max(64),
+      applicationRole: z.enum(FRAUDLENS_ROLES),
+    })).mutation(async ({ ctx, input }) => {
+      const user = await changeFraudLensRole({
+        orgId: ctx.orgId!,
+        actorUserId: ctx.user!.openId,
+        userId: input.userId,
+        role: input.applicationRole,
+      });
+      return { userId: input.userId, applicationRole: user?.role ?? input.applicationRole };
+    }),
+    deactivateMember: organizationAdministratorProcedure.input(z.object({
+      userId: z.string().trim().min(1).max(64),
+    })).mutation(async ({ ctx, input }) => {
+      await deactivateOrganizationMember({ orgId: ctx.orgId!, actorUserId: ctx.user!.openId, userId: input.userId });
+      return { userId: input.userId };
+    }),
+    revokeSessions: organizationAdministratorProcedure.input(z.object({
+      userId: z.string().trim().min(1).max(64),
+    })).mutation(({ ctx, input }) => revokeMemberSessions({
+      orgId: ctx.orgId!,
+      actorUserId: ctx.user!.openId,
+      userId: input.userId,
+    })),
+    revokeInvitation: organizationAdministratorProcedure.input(z.object({
+      invitationId: z.string().trim().min(1).max(64),
+    })).mutation(async ({ ctx, input }) => {
+      await revokeOrganizationInvitation({ orgId: ctx.orgId!, actorUserId: ctx.user!.openId, invitationId: input.invitationId });
+      return { invitationId: input.invitationId };
+    }),
   }),
   risk: router({
     overview: organizationProcedure.query(({ ctx }) => buildOverview(getRecords(ctx.orgId))),

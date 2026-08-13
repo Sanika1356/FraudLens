@@ -22,7 +22,7 @@ import {
   useSidebar,
 } from "@/components/ui/sidebar";
 import { useIsMobile } from "@/hooks/useMobile";
-import { Activity, ClipboardList, LayoutDashboard, LogOut, PanelLeft, PlusCircle, Radar, ShieldCheck } from "lucide-react";
+import { Activity, ClipboardList, LayoutDashboard, LogOut, PanelLeft, PlusCircle, Radar, ShieldCheck, UsersRound } from "lucide-react";
 import { CSSProperties, useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
 import { DashboardLayoutSkeleton } from "./DashboardLayoutSkeleton";
@@ -34,6 +34,7 @@ const menuItems = [
   { icon: ShieldCheck, label: "Casework", path: "/casework" },
   { icon: Activity, label: "Model Health", path: "/model-health", requiresManager: true },
   { icon: Radar, label: "Drift Monitor", path: "/drift", requiresManager: true },
+  { icon: UsersRound, label: "Team Access", path: "/team", requiresAdmin: true },
 ];
 
 const SIDEBAR_WIDTH_KEY = "fraudlens-sidebar-width";
@@ -80,7 +81,10 @@ function DashboardLayoutContent({ children, setSidebarWidth }: { children: React
   const sidebarRef = useRef<HTMLDivElement>(null);
   const isCollapsed = state === "collapsed";
   const isMobile = useIsMobile();
-  const availableMenuItems = menuItems.filter((item) => !item.requiresManager || user?.role !== "analyst");
+  const availableMenuItems = menuItems.filter((item) => {
+    if (item.requiresAdmin) return user?.role === "admin";
+    return !item.requiresManager || user?.role !== "analyst";
+  });
   const activeMenuItem = availableMenuItems.find((item) => item.path === location);
   const displayName = user?.name || "FraudLens user";
   const roleLabel = user?.role === "admin" ? "Administrator" : user?.role === "manager" ? "Manager" : "Analyst";

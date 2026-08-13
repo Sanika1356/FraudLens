@@ -2,6 +2,7 @@ import { OrganizationList, RedirectToSignIn, SignIn, SignUp, useAuth, useOrganiz
 import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import {
+  AdministratorManagementPage,
   AssessmentPage,
   CaseworkPage,
   CommandCenterPage,
@@ -25,6 +26,7 @@ function WorkspaceRouter() {
       <Route path="/casework" component={CaseworkPage} />
       <Route path="/model-health" component={ModelHealthPage} />
       <Route path="/drift" component={DriftPage} />
+      <Route path="/team" component={AdministratorManagementPage} />
       <Route path="/404" component={NotFound} />
       <Route component={NotFound} />
     </Switch>

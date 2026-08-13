@@ -71,5 +71,19 @@ export const organizationProcedure = analystProcedure.use(activeOrganizationMidd
 /** Requires a manager or administrator in an active Clerk organization. */
 export const organizationManagerProcedure = managerProcedure.use(activeOrganizationMiddleware);
 
+/** Requires both a FraudLens administrator and Clerk organization administrator membership. */
+export const organizationAdministratorProcedure = adminProcedure
+  .use(activeOrganizationMiddleware)
+  .use(t.middleware(async ({ ctx, next }) => {
+    if (ctx.orgRole !== "org:admin") {
+      throw new TRPCError({
+        code: "FORBIDDEN",
+        message: "This action requires administrator membership in the active organization.",
+      });
+    }
+
+    return next({ ctx });
+  }));
+
 // Backward-compatible shorthand for any signed-in FraudLens user.
 export const protectedProcedure = analystProcedure;

@@ -81,6 +81,39 @@ describe("Clerk-protected FraudLens APIs", () => {
     await expect(secondWorkspace.risk.detail({ id: assessed.id })).resolves.toBeNull();
   });
 
+  it("rejects Team Access controls without an active organization", async () => {
+    const caller = appRouter.createCaller(createContext(createUser("admin"), null));
+
+    await expect(caller.administration.directory()).rejects.toMatchObject({
+      code: "UNAUTHORIZED",
+      message: "Select an active organization workspace to access this data.",
+    });
+  });
+
+  it("requires both FraudLens and organization administrator roles for Team Access", async () => {
+    const applicationAnalyst = appRouter.createCaller(createContext(createUser("analyst")));
+    const organizationMemberContext = {
+      ...createContext(createUser("admin")),
+      orgRole: "org:member",
+    } as TrpcContext;
+    const organizationMember = appRouter.createCaller(organizationMemberContext);
+
+    await expect(applicationAnalyst.administration.directory()).rejects.toMatchObject({ code: "FORBIDDEN" });
+    await expect(organizationMember.administration.directory()).rejects.toMatchObject({
+      code: "FORBIDDEN",
+      message: "This action requires administrator membership in the active organization.",
+    });
+  });
+
+  it("prevents a non-administrator from submitting Team Access mutations", async () => {
+    const caller = appRouter.createCaller(createContext(createUser("manager")));
+
+    await expect(caller.administration.invite({
+      emailAddress: "new.member@example.com",
+      organizationRole: "org:member",
+    })).rejects.toMatchObject({ code: "FORBIDDEN" });
+  });
+
   it("prevents an analyst from viewing model-monitoring data", async () => {
     const caller = appRouter.createCaller(createContext(createUser("analyst")));
 
