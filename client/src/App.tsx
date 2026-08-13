@@ -9,6 +9,7 @@ import {
   CommandCenterPage,
   DriftPage,
   ModelHealthPage,
+  NotificationSettingsPage,
   TransactionDetailPage,
   TransactionImportPage,
   TransactionsPage,
@@ -30,6 +31,7 @@ function WorkspaceRouter() {
       <Route path="/model-health" component={ModelHealthPage} />
       <Route path="/drift" component={DriftPage} />
       <Route path="/audit" component={AuditLogPage} />
+      <Route path="/alerts" component={NotificationSettingsPage} />
       <Route path="/team" component={AdministratorManagementPage} />
       <Route path="/404" component={NotFound} />
       <Route component={NotFound} />

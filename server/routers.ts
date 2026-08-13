@@ -12,7 +12,7 @@ import {
   revokeMemberSessions,
   revokeOrganizationInvitation,
 } from "./adminManagement";
-import { addCaseComment, addCaseEvidence, getAuditEventsByOrganization, getCaseCollaboration, getDb, getTransactionReferencesByOrganization, persistTransaction, recordAuditEvent, replaceCaseTags } from "./db";
+import { addCaseComment, addCaseEvidence, getAuditEventsByOrganization, getCaseCollaboration, getDb, getNotificationPreferences, getTransactionReferencesByOrganization, persistTransaction, recordAuditEvent, replaceCaseTags, upsertNotificationPreferences } from "./db";
 import { createEvidenceStorageKey, isSupabaseStorageConfigured, storageDelete, storagePut } from "./storage";
 import { decodeAndValidateEvidenceAttachment } from "./evidenceFiles";
 import { demoTransactions, driftDemo, RiskRecord } from "./demoData";
@@ -20,6 +20,7 @@ import { createInvestigatorSummary } from "./investigatorSummary";
 import { modelHealth } from "./modelData";
 import { CASE_STATUSES, RISK_LEVELS, RiskInput, scoreTransaction } from "./riskEngine";
 import { parseCsvImport } from "./csvImport";
+import { ALERT_CHANNELS, createTestAlertTransaction, isAllowedSlackWebhookUrl, isAllowedTeamsWebhookUrl, sendAlertNotifications } from "./notifications";
 
 export const riskInputSchema = z.object({
   amount: z.number().positive().max(1000000),
@@ -50,6 +51,19 @@ export const caseUpdateSchema = z.object({
 });
 
 export const CASE_PRIORITIES = ["critical", "high", "standard"] as const;
+export const notificationPreferencesSchema = z.object({
+  emailEnabled: z.boolean(),
+  toEmail: z.string().trim().email().max(320).nullable(),
+  slackEnabled: z.boolean(),
+  slackWebhookUrl: z.string().trim().url().max(2048).refine(isAllowedSlackWebhookUrl, "Use a valid Slack incoming webhook URL.").nullable(),
+  teamsEnabled: z.boolean(),
+  teamsWebhookUrl: z.string().trim().url().max(2048).refine(isAllowedTeamsWebhookUrl, "Use a valid Teams or Power Automate workflow URL.").nullable(),
+  riskThreshold: z.number().int().min(0).max(100),
+}).superRefine((preferences, context) => {
+  if (preferences.emailEnabled && !preferences.toEmail) context.addIssue({ code: z.ZodIssueCode.custom, path: ["toEmail"], message: "Provide an email recipient before enabling email alerts." });
+  if (preferences.slackEnabled && !preferences.slackWebhookUrl) context.addIssue({ code: z.ZodIssueCode.custom, path: ["slackWebhookUrl"], message: "Provide a Slack webhook URL before enabling Slack alerts." });
+  if (preferences.teamsEnabled && !preferences.teamsWebhookUrl) context.addIssue({ code: z.ZodIssueCode.custom, path: ["teamsWebhookUrl"], message: "Provide a Teams workflow URL before enabling Teams alerts." });
+});
 export const caseWorkflowUpdateSchema = z.object({
   id: z.number().int().positive(),
   assigneeId: z.string().trim().min(1).max(64).nullable(),
@@ -199,6 +213,43 @@ export const appRouter = router({
       return ctx.user;
     }),
   }),
+  notifications: router({
+    get: organizationManagerProcedure.query(({ ctx }) => getNotificationPreferences(ctx.orgId)),
+    update: organizationManagerProcedure.input(notificationPreferencesSchema).mutation(async ({ ctx, input }) => {
+      const preferences = await upsertNotificationPreferences(ctx.orgId, input);
+      await recordAuditEvent({
+        orgId: ctx.orgId,
+        eventType: "notifications.preferences_updated",
+        actorId: ctx.user!.openId,
+        actorName: ctx.user!.name ?? ctx.user!.email,
+        subjectType: "notification_preferences",
+        subjectId: String(preferences.id),
+        summary: "Updated high-risk alert preferences.",
+        metadata: {
+          emailEnabled: preferences.emailEnabled,
+          slackEnabled: preferences.slackEnabled,
+          teamsEnabled: preferences.teamsEnabled,
+          riskThreshold: preferences.riskThreshold,
+        },
+      });
+      return preferences;
+    }),
+    testAlert: organizationManagerProcedure.input(z.object({ channel: z.enum(ALERT_CHANNELS).optional() }).optional()).mutation(async ({ ctx, input }) => {
+      const channels = input?.channel ? [input.channel] : undefined;
+      const results = await sendAlertNotifications(ctx.orgId, createTestAlertTransaction(), 100, { force: true, channels });
+      await recordAuditEvent({
+        orgId: ctx.orgId,
+        eventType: "notifications.test_alert_sent",
+        actorId: ctx.user!.openId,
+        actorName: ctx.user!.name ?? ctx.user!.email,
+        subjectType: "notification_preferences",
+        subjectId: ctx.orgId,
+        summary: `Sent a test alert${input?.channel ? ` through ${input.channel}` : " through configured channels"}.`,
+        metadata: { channels: channels ?? ALERT_CHANNELS, results: results.map((result) => ({ channel: result.channel, status: result.status })) },
+      });
+      return { results };
+    }),
+  }),
   audit: router({
     list: organizationManagerProcedure.input(z.object({ limit: z.number().int().min(1).max(200).default(100) }).optional()).query(async ({ ctx, input }) => {
       const events = await getAuditEventsByOrganization(ctx.orgId, input?.limit ?? 100);
@@ -305,6 +356,7 @@ export const appRouter = router({
       getRecords(ctx.orgId).unshift(record);
       await persistTransaction(ctx.orgId, asInsertTransaction(record));
       await recordAuditEvent({ orgId: ctx.orgId, eventType: "case.assessment_created", actorId: ctx.user!.openId, actorName: ctx.user!.name ?? ctx.user!.email, subjectType: "case", subjectId: String(record.id), summary: `Created case ${record.reference} from a risk assessment.`, metadata: { riskLevel: record.riskLevel, casePriority: record.casePriority } });
+      void sendAlertNotifications(ctx.orgId, record).catch((error) => console.error("[FraudLens] Alert evaluation failed", error));
       return record;
     }),
     importCsv: organizationManagerProcedure.input(z.object({

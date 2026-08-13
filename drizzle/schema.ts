@@ -94,6 +94,22 @@ export const auditEvents = mysqlTable("auditEvents", {
   createdAt: timestamp("createdAt").defaultNow().notNull(),
 });
 
+export const notificationPreferences = mysqlTable("notificationPreferences", {
+  id: int("id").autoincrement().primaryKey(),
+  /** Exactly one alert configuration is allowed for each active Clerk organization. */
+  orgId: varchar("orgId", { length: 64 }).notNull().unique(),
+  emailEnabled: boolean("emailEnabled").default(false).notNull(),
+  toEmail: varchar("toEmail", { length: 320 }),
+  slackEnabled: boolean("slackEnabled").default(false).notNull(),
+  /** Stored server-side because incoming webhook URLs are channel secrets. */
+  slackWebhookUrl: varchar("slackWebhookUrl", { length: 2048 }),
+  teamsEnabled: boolean("teamsEnabled").default(false).notNull(),
+  /** Power Automate/Teams workflow URL. Legacy connector URLs are not required. */
+  teamsWebhookUrl: varchar("teamsWebhookUrl", { length: 2048 }),
+  riskThreshold: int("riskThreshold").default(80).notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
 export const modelMetricSnapshots = mysqlTable("modelMetricSnapshots", {
   id: int("id").autoincrement().primaryKey(),
   /** Clerk organization identifier for workspace-level model metrics. */
@@ -126,3 +142,5 @@ export type User = typeof users.$inferSelect;
 export type InsertUser = typeof users.$inferInsert;
 export type Transaction = typeof transactions.$inferSelect;
 export type InsertTransaction = typeof transactions.$inferInsert;
+export type NotificationPreferences = typeof notificationPreferences.$inferSelect;
+export type InsertNotificationPreferences = typeof notificationPreferences.$inferInsert;

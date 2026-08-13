@@ -236,6 +236,45 @@ describe("Clerk-protected FraudLens APIs", () => {
     });
   });
 
+  it("requires manager access and an active organization for notification preferences", async () => {
+    const analyst = appRouter.createCaller(createContext(createUser("analyst"), "org_notification_access"));
+    const managerWithoutWorkspace = appRouter.createCaller(createContext(createUser("manager"), null));
+    const manager = appRouter.createCaller(createContext(createUser("manager"), "org_notification_access"));
+
+    await expect(analyst.notifications.get()).rejects.toMatchObject({ code: "FORBIDDEN" });
+    await expect(managerWithoutWorkspace.notifications.get()).rejects.toMatchObject({
+      code: "UNAUTHORIZED",
+      message: "Select an active organization workspace to access this data.",
+    });
+    await expect(manager.notifications.update({
+      emailEnabled: false,
+      toEmail: null,
+      slackEnabled: false,
+      slackWebhookUrl: null,
+      teamsEnabled: false,
+      teamsWebhookUrl: null,
+      riskThreshold: 74,
+    })).resolves.toMatchObject({ orgId: "org_notification_access", riskThreshold: 74 });
+  });
+
+  it("keeps notification preferences isolated to their active organization", async () => {
+    const firstWorkspace = appRouter.createCaller(createContext(createUser("manager"), "org_notification_first"));
+    const secondWorkspace = appRouter.createCaller(createContext(createUser("manager"), "org_notification_second"));
+
+    await firstWorkspace.notifications.update({
+      emailEnabled: false,
+      toEmail: null,
+      slackEnabled: true,
+      slackWebhookUrl: "https://hooks.slack.com/services/T123/B123/secret",
+      teamsEnabled: false,
+      teamsWebhookUrl: null,
+      riskThreshold: 67,
+    });
+
+    await expect(firstWorkspace.notifications.get()).resolves.toMatchObject({ orgId: "org_notification_first", slackEnabled: true, riskThreshold: 67 });
+    await expect(secondWorkspace.notifications.get()).resolves.toMatchObject({ orgId: "org_notification_second", slackEnabled: false, riskThreshold: 80 });
+  });
+
   it("permits managers and administrators to view model-monitoring data", async () => {
     const manager = appRouter.createCaller(createContext(createUser("manager")));
     const administrator = appRouter.createCaller(createContext(createUser("admin")));

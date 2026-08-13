@@ -1,6 +1,6 @@
 import { and, desc, eq } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
-import { auditEvents, caseEvidence, caseNotes, caseTags, InsertUser, InsertTransaction, transactions, users } from "../drizzle/schema";
+import { auditEvents, caseEvidence, caseNotes, caseTags, InsertUser, InsertTransaction, notificationPreferences, transactions, users } from "../drizzle/schema";
 import { ENV } from "./_core/env";
 
 let database: ReturnType<typeof drizzle> | null = null;
@@ -53,10 +53,37 @@ export type CaseEvidenceInput = {
 };
 export type CaseEvidenceRecord = CaseEvidenceInput & { id: number; createdAt: Date };
 
+export type NotificationPreferencesInput = {
+  emailEnabled: boolean;
+  toEmail: string | null;
+  slackEnabled: boolean;
+  slackWebhookUrl: string | null;
+  teamsEnabled: boolean;
+  teamsWebhookUrl: string | null;
+  riskThreshold: number;
+};
+
+export type NotificationPreferencesRecord = NotificationPreferencesInput & {
+  id: number;
+  orgId: string;
+  updatedAt: Date;
+};
+
+export const DEFAULT_NOTIFICATION_PREFERENCES: NotificationPreferencesInput = {
+  emailEnabled: false,
+  toEmail: null,
+  slackEnabled: false,
+  slackWebhookUrl: null,
+  teamsEnabled: false,
+  teamsWebhookUrl: null,
+  riskThreshold: 80,
+};
+
 const inMemoryAuditEvents = new Map<string, AuditEventRecord[]>();
 const inMemoryComments = new Map<string, CaseCommentRecord[]>();
 const inMemoryTags = new Map<string, CaseTagRecord[]>();
 const inMemoryEvidence = new Map<string, CaseEvidenceRecord[]>();
+const inMemoryNotificationPreferences = new Map<string, NotificationPreferencesRecord>();
 let inMemoryCaseArtifactId = 1;
 
 function caseKey(orgId: string, transactionId: number) {
@@ -107,6 +134,52 @@ export async function getTransactionReferencesByOrganization(orgId: string): Pro
   const rows = await db.select({ reference: transactions.reference }).from(transactions)
     .where(eq(transactions.orgId, orgId));
   return new Set(rows.map((row) => row.reference.trim().toUpperCase()));
+}
+
+export async function getNotificationPreferences(orgId: string): Promise<NotificationPreferencesRecord> {
+  const db = await getDb();
+  if (!db) {
+    return inMemoryNotificationPreferences.get(orgId) ?? {
+      id: 0,
+      orgId,
+      ...DEFAULT_NOTIFICATION_PREFERENCES,
+      updatedAt: new Date(),
+    };
+  }
+
+  const rows = await db.select().from(notificationPreferences)
+    .where(eq(notificationPreferences.orgId, orgId))
+    .limit(1);
+  const preferences = rows[0];
+  return preferences ?? {
+    id: 0,
+    orgId,
+    ...DEFAULT_NOTIFICATION_PREFERENCES,
+    updatedAt: new Date(),
+  };
+}
+
+export async function upsertNotificationPreferences(
+  orgId: string,
+  preferences: NotificationPreferencesInput,
+): Promise<NotificationPreferencesRecord> {
+  const db = await getDb();
+  if (!db) {
+    const existing = inMemoryNotificationPreferences.get(orgId);
+    const saved: NotificationPreferencesRecord = {
+      id: existing?.id ?? Date.now(),
+      orgId,
+      ...preferences,
+      updatedAt: new Date(),
+    };
+    inMemoryNotificationPreferences.set(orgId, saved);
+    return saved;
+  }
+
+  await db.insert(notificationPreferences).values({ orgId, ...preferences }).onDuplicateKeyUpdate({
+    set: { ...preferences, updatedAt: new Date() },
+  });
+  return getNotificationPreferences(orgId);
 }
 
 export async function recordAuditEvent(input: AuditEventInput): Promise<void> {

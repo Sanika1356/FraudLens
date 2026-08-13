@@ -16,6 +16,9 @@ export const ENV = {
   supabaseUrl: process.env.SUPABASE_URL ?? "",
   supabaseServiceRoleKey: process.env.SUPABASE_SERVICE_ROLE_KEY ?? "",
   supabaseStorageBucket: process.env.SUPABASE_STORAGE_BUCKET ?? "fraudlens-evidence",
+  /** Optional: alerts continue through webhooks when Resend is not configured. */
+  resendApiKey: process.env.RESEND_API_KEY ?? "",
+  resendFromEmail: process.env.RESEND_FROM_EMAIL ?? "onboarding@resend.dev",
 };
 
 export function resolveBootstrapRole(openId: string): "analyst" | "manager" | "admin" {

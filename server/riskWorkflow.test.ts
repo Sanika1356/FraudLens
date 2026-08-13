@@ -3,7 +3,8 @@ import { demoTransactions } from "./demoData";
 import { parseCsvImport } from "./csvImport";
 import { decodeAndValidateEvidenceAttachment } from "./evidenceFiles";
 import { createEvidenceStorageKey } from "./storage";
-import { applyCaseUpdate, applyCaseWorkflowUpdate, caseUpdateSchema, caseWorkflowUpdateSchema, riskInputSchema } from "./routers";
+import { applyCaseUpdate, applyCaseWorkflowUpdate, caseUpdateSchema, caseWorkflowUpdateSchema, notificationPreferencesSchema, riskInputSchema } from "./routers";
+import { shouldSendHighRiskAlert } from "./notifications";
 
 describe("FraudLens workflow validation", () => {
   it("rejects unsafe manual assessment inputs before scoring", () => {
@@ -107,6 +108,29 @@ describe("FraudLens workflow validation", () => {
   it("creates segregated evidence keys without trusting caller file paths", () => {
     expect(createEvidenceStorageKey("org_alpha", 42, "merchant invoice.pdf")).toMatch(/^evidence\/org_alpha\/42\/merchant-invoice\.pdf$/);
     expect(createEvidenceStorageKey("org_beta", 42, "merchant invoice.pdf")).not.toContain("org_alpha");
+  });
+
+  it("evaluates high-risk alerts at and above the configured threshold only", () => {
+    expect(shouldSendHighRiskAlert(80, 80)).toBe(true);
+    expect(shouldSendHighRiskAlert(81, 80)).toBe(true);
+    expect(shouldSendHighRiskAlert(79, 80)).toBe(false);
+    expect(shouldSendHighRiskAlert(Number.NaN, 80)).toBe(false);
+  });
+
+  it("requires valid configured destinations before alert channels can be enabled", () => {
+    const missingEmail = notificationPreferencesSchema.safeParse({
+      emailEnabled: true, toEmail: null, slackEnabled: false, slackWebhookUrl: null, teamsEnabled: false, teamsWebhookUrl: null, riskThreshold: 80,
+    });
+    const unsafeSlack = notificationPreferencesSchema.safeParse({
+      emailEnabled: false, toEmail: null, slackEnabled: true, slackWebhookUrl: "https://example.com/webhook", teamsEnabled: false, teamsWebhookUrl: null, riskThreshold: 80,
+    });
+    const valid = notificationPreferencesSchema.safeParse({
+      emailEnabled: true, toEmail: "fraud-operations@example.com", slackEnabled: true, slackWebhookUrl: "https://hooks.slack.com/services/T123/B123/secret", teamsEnabled: true, teamsWebhookUrl: "https://prod-01.westus.logic.azure.com/workflows/test/triggers/manual/paths/invoke", riskThreshold: 80,
+    });
+
+    expect(missingEmail.success).toBe(false);
+    expect(unsafeSlack.success).toBe(false);
+    expect(valid.success).toBe(true);
   });
 
   it("reports required headers and malformed quoted CSV data precisely", () => {

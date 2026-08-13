@@ -474,3 +474,127 @@ export function TransactionImportPage() {
       <div className="space-y-6">{result ? <><div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4"><Panel><p className="text-xs font-medium text-slate-500">Source rows</p><p className="mt-2 text-3xl font-semibold text-slate-100">{result.totalRows}</p></Panel><Panel><p className="text-xs font-medium text-slate-500">Imported and scored</p><p className="mt-2 text-3xl font-semibold text-emerald-200">{result.imported}</p></Panel><Panel><p className="text-xs font-medium text-slate-500">Invalid rows</p><p className="mt-2 text-3xl font-semibold text-rose-200">{result.invalidRows}</p></Panel><Panel><p className="text-xs font-medium text-slate-500">Duplicates skipped</p><p className="mt-2 text-3xl font-semibold text-amber-200">{result.duplicates}</p></Panel></div><Panel><div className="flex items-start justify-between gap-4"><div><Eyebrow>Import summary</Eyebrow><h2 className="mt-2 text-xl font-semibold text-slate-100">{result.fileName}</h2><p className="mt-1 text-sm text-slate-500">Bulk risk scoring was completed only for accepted transaction rows.</p></div><div className="flex gap-2"><RiskPill level="high" /><span className="text-sm font-semibold text-slate-200">{result.riskDistribution.high}</span><RiskPill level="medium" /><span className="text-sm font-semibold text-slate-200">{result.riskDistribution.medium}</span><RiskPill level="low" /><span className="text-sm font-semibold text-slate-200">{result.riskDistribution.low}</span></div></div>{result.importedRecords.length ? <div className="mt-5 overflow-x-auto"><table className="w-full min-w-[520px] text-left text-sm"><thead><tr className="border-b border-white/[0.07] text-[10px] uppercase tracking-[0.13em] text-slate-500"><th className="pb-3 font-medium">Reference</th><th className="pb-3 font-medium">Risk</th><th className="pb-3 text-right font-medium">Probability</th></tr></thead><tbody>{result.importedRecords.map((record: any) => <tr key={record.id} className="border-b border-white/[0.045] last:border-0"><td className="py-3 font-mono text-xs text-slate-300">{record.reference}</td><td className="py-3"><RiskPill level={record.riskLevel} /></td><td className="py-3 text-right font-semibold text-slate-200">{record.probability}%</td></tr>)}</tbody></table></div> : null}</Panel>{result.errors.length ? <Panel><div><Eyebrow>Row-level errors</Eyebrow><h2 className="mt-2 text-xl font-semibold text-slate-100">Correct and re-upload these rows</h2><p className="mt-1 text-sm text-slate-500">Showing up to 100 errors. Accepted rows do not need to be re-imported.</p></div><div className="mt-5 max-h-[420px] overflow-auto rounded-xl border border-white/[0.07]"><table className="w-full min-w-[620px] text-left text-sm"><thead className="sticky top-0 bg-[#0c1a28]"><tr className="border-b border-white/[0.07] text-[10px] uppercase tracking-[0.13em] text-slate-500"><th className="px-4 py-3 font-medium">Row</th><th className="px-4 py-3 font-medium">Field</th><th className="px-4 py-3 font-medium">Issue</th></tr></thead><tbody>{result.errors.map((error: any, index: number) => <tr key={`${error.row}-${error.field}-${index}`} className="border-b border-white/[0.045] last:border-0"><td className="px-4 py-3 font-mono text-xs text-slate-400">{error.row}</td><td className="px-4 py-3 font-mono text-xs text-cyan-100">{error.field}</td><td className="px-4 py-3 text-slate-300">{error.message}</td></tr>)}</tbody></table></div></Panel> : null}</> : <Panel className="flex min-h-[360px] flex-col justify-center"><div className="flex h-12 w-12 items-center justify-center rounded-xl bg-cyan-300/10 text-cyan-300"><Database className="h-6 w-6" /></div><h2 className="mt-5 text-xl font-semibold text-slate-100">Ready for a validated batch.</h2><p className="mt-2 max-w-md text-sm leading-6 text-slate-500">Upload a CSV to receive a row-level validation report, duplicate checks, bulk risk scores, and a workspace-scoped import summary.</p></Panel>}</div></div>
   </Frame>;
 }
+
+
+type NotificationForm = {
+  emailEnabled: boolean;
+  toEmail: string;
+  slackEnabled: boolean;
+  slackWebhookUrl: string;
+  teamsEnabled: boolean;
+  teamsWebhookUrl: string;
+  riskThreshold: number;
+};
+
+const defaultNotificationForm: NotificationForm = {
+  emailEnabled: false,
+  toEmail: "",
+  slackEnabled: false,
+  slackWebhookUrl: "",
+  teamsEnabled: false,
+  teamsWebhookUrl: "",
+  riskThreshold: 80,
+};
+
+function NotificationChannelCard({
+  title,
+  description,
+  enabled,
+  onEnabledChange,
+  inputLabel,
+  inputValue,
+  onInputChange,
+  placeholder,
+  inputType = "url",
+  testLabel,
+  onTest,
+  isTesting,
+}: {
+  title: string;
+  description: string;
+  enabled: boolean;
+  onEnabledChange: (enabled: boolean) => void;
+  inputLabel: string;
+  inputValue: string;
+  onInputChange: (value: string) => void;
+  placeholder: string;
+  inputType?: "url" | "email";
+  testLabel: string;
+  onTest: () => void;
+  isTesting: boolean;
+}) {
+  return <Panel className={enabled ? "border-cyan-300/25" : ""}><div className="flex flex-col gap-5 sm:flex-row sm:items-start sm:justify-between"><div className="min-w-0"><div className="flex items-center gap-2"><div className={`rounded-lg p-2 ${enabled ? "bg-cyan-300/10 text-cyan-200" : "bg-white/[0.04] text-slate-500"}`}><BellRing className="h-4 w-4" /></div><p className="text-sm font-semibold text-slate-100">{title}</p></div><p className="mt-2 max-w-2xl text-sm leading-6 text-slate-500">{description}</p></div><label className="inline-flex cursor-pointer items-center gap-2 self-start rounded-full border border-white/10 bg-[#07111e] px-3 py-2 text-xs font-semibold text-slate-300"><input type="checkbox" checked={enabled} onChange={(event) => onEnabledChange(event.target.checked)} className="h-4 w-4 accent-cyan-300" /><span>{enabled ? "Enabled" : "Disabled"}</span></label></div><div className="mt-5 grid gap-3 sm:grid-cols-[1fr_auto]"><div><label className="text-xs font-medium text-slate-400" htmlFor={`${title}-destination`}>{inputLabel}</label><Input id={`${title}-destination`} type={inputType} value={inputValue} disabled={!enabled} onChange={(event) => onInputChange(event.target.value)} placeholder={placeholder} className="mt-2 border-white/10 bg-[#07111e] text-slate-200 placeholder:text-slate-600 focus-visible:ring-cyan-300 disabled:cursor-not-allowed disabled:opacity-45" /></div><Button type="button" variant="outline" onClick={onTest} disabled={isTesting} className="self-end border-white/10 bg-white/[0.03] text-slate-100 hover:bg-white/[0.08]"><Send className="mr-2 h-4 w-4" />{isTesting ? "Sending…" : testLabel}</Button></div></Panel>;
+}
+
+export function NotificationSettingsPage() {
+  const { user } = useAuth();
+  const utils = trpc.useUtils();
+  const preferences = trpc.notifications.get.useQuery();
+  const [form, setForm] = useState<NotificationForm>(defaultNotificationForm);
+  const [initialized, setInitialized] = useState(false);
+
+  useEffect(() => {
+    if (!preferences.data || initialized) return;
+    setForm({
+      emailEnabled: preferences.data.emailEnabled,
+      toEmail: preferences.data.toEmail ?? "",
+      slackEnabled: preferences.data.slackEnabled,
+      slackWebhookUrl: preferences.data.slackWebhookUrl ?? "",
+      teamsEnabled: preferences.data.teamsEnabled,
+      teamsWebhookUrl: preferences.data.teamsWebhookUrl ?? "",
+      riskThreshold: preferences.data.riskThreshold,
+    });
+    setInitialized(true);
+  }, [initialized, preferences.data]);
+
+  const save = trpc.notifications.update.useMutation({
+    onSuccess: (saved) => {
+      setForm({
+        emailEnabled: saved.emailEnabled,
+        toEmail: saved.toEmail ?? "",
+        slackEnabled: saved.slackEnabled,
+        slackWebhookUrl: saved.slackWebhookUrl ?? "",
+        teamsEnabled: saved.teamsEnabled,
+        teamsWebhookUrl: saved.teamsWebhookUrl ?? "",
+        riskThreshold: saved.riskThreshold,
+      });
+      utils.notifications.get.invalidate();
+      toast.success("Alert settings saved", { description: `Transactions scoring ${saved.riskThreshold} or higher will be evaluated for enabled alert channels.` });
+    },
+    onError: (error) => toast.error("Unable to save alert settings", { description: error.message }),
+  });
+
+  const testAlert = trpc.notifications.testAlert.useMutation({
+    onSuccess: ({ results }) => {
+      const result = results[0];
+      if (!result) { toast.warning("No alert channel was selected."); return; }
+      if (result.status === "sent") toast.success(`${result.channel[0].toUpperCase()}${result.channel.slice(1)} test alert sent`);
+      else toast.warning(`${result.channel[0].toUpperCase()}${result.channel.slice(1)} test alert ${result.status}`, { description: result.reason ?? "Review this channel’s configuration and try again." });
+    },
+    onError: (error) => toast.error("Test alert failed", { description: error.message }),
+  });
+
+  const updateForm = (values: Partial<NotificationForm>) => setForm((current) => ({ ...current, ...values }));
+  const saveSettings = () => save.mutate({
+    emailEnabled: form.emailEnabled,
+    toEmail: form.toEmail.trim() || null,
+    slackEnabled: form.slackEnabled,
+    slackWebhookUrl: form.slackWebhookUrl.trim() || null,
+    teamsEnabled: form.teamsEnabled,
+    teamsWebhookUrl: form.teamsWebhookUrl.trim() || null,
+    riskThreshold: form.riskThreshold,
+  });
+
+  if (user?.role === "analyst") return <Frame><PageTitle eyebrow="High-risk alerts" title="Manager access required" /><QueryState state="error" label="Only managers and administrators can configure workspace alert settings." /></Frame>;
+  if (preferences.isLoading) return <Frame><PageTitle eyebrow="High-risk alerts" title="Alert settings" /><QueryState state="loading" label="Loading workspace alert settings…" /></Frame>;
+  if (preferences.error) return <Frame><PageTitle eyebrow="High-risk alerts" title="Alert settings" /><QueryState state="error" label="Unable to load alert settings. Refresh the page and try again." /></Frame>;
+
+  return <Frame><PageTitle eyebrow="Workspace safeguards" title="High-risk alerts"><Button onClick={saveSettings} disabled={save.isPending} className="bg-cyan-300 text-slate-950 hover:bg-cyan-200"><CheckCircle2 className="mr-2 h-4 w-4" />{save.isPending ? "Saving…" : "Save alert settings"}</Button></PageTitle>
+    <div className="mb-6 rounded-xl border border-amber-300/15 bg-amber-300/[0.055] px-4 py-3 text-sm leading-6 text-amber-100"><AlertTriangle className="mr-2 inline h-4 w-4 text-amber-200" /><span className="font-semibold">Review remains essential.</span> Alerts surface high-risk activity quickly but do not replace investigator review. Webhook URLs are visible only to managers and administrators in this workspace.</div>
+    <div className="grid gap-6 xl:grid-cols-[0.82fr_1.18fr]"><div className="space-y-6"><Panel><div className="flex items-start gap-3"><div className="rounded-xl bg-rose-300/10 p-2.5 text-rose-200"><ShieldAlert className="h-5 w-5" /></div><div><p className="text-sm font-semibold text-slate-100">Risk threshold</p><p className="mt-1 text-sm leading-6 text-slate-500">Send enabled alerts when a transaction’s risk score is equal to or greater than this value.</p></div></div><div className="mt-7"><div className="flex items-end justify-between"><label htmlFor="alert-threshold" className="text-xs font-medium text-slate-400">Minimum risk score</label><p className="text-4xl font-semibold tracking-tight text-rose-200">{form.riskThreshold}<span className="text-lg text-rose-200/60">/100</span></p></div><input id="alert-threshold" type="range" min="0" max="100" step="1" value={form.riskThreshold} onChange={(event) => updateForm({ riskThreshold: Number(event.target.value) })} className="mt-5 h-2 w-full cursor-pointer accent-cyan-300" /><div className="mt-2 flex justify-between text-[11px] text-slate-600"><span>0</span><span>50</span><span>100</span></div></div></Panel>
+      <Panel><Eyebrow>Setup sequence</Eyebrow><ol className="mt-3 space-y-3 text-sm leading-6 text-slate-400"><li><span className="mr-2 inline-flex h-5 w-5 items-center justify-center rounded-full bg-cyan-300/10 text-xs font-semibold text-cyan-200">1</span>Enter a recipient address or incoming workflow URL.</li><li><span className="mr-2 inline-flex h-5 w-5 items-center justify-center rounded-full bg-cyan-300/10 text-xs font-semibold text-cyan-200">2</span>Enable the channel and save the configuration.</li><li><span className="mr-2 inline-flex h-5 w-5 items-center justify-center rounded-full bg-cyan-300/10 text-xs font-semibold text-cyan-200">3</span>Send a test alert to confirm the destination.</li></ol></Panel></div>
+      <div className="space-y-6"><NotificationChannelCard title="Email" description="Send a concise high-risk alert through the workspace’s configured email service. A verified sending domain is recommended before production use." enabled={form.emailEnabled} onEnabledChange={(emailEnabled) => updateForm({ emailEnabled })} inputLabel="Recipient email address" inputValue={form.toEmail} onInputChange={(toEmail) => updateForm({ toEmail })} placeholder="fraud-operations@example.com" inputType="email" testLabel="Test email" onTest={() => testAlert.mutate({ channel: "email" })} isTesting={testAlert.isPending} />
+        <NotificationChannelCard title="Slack" description="Post high-risk alerts to a Slack channel using an incoming webhook URL created for that channel." enabled={form.slackEnabled} onEnabledChange={(slackEnabled) => updateForm({ slackEnabled })} inputLabel="Slack incoming webhook URL" inputValue={form.slackWebhookUrl} onInputChange={(slackWebhookUrl) => updateForm({ slackWebhookUrl })} placeholder="https://hooks.slack.com/services/…" testLabel="Test Slack" onTest={() => testAlert.mutate({ channel: "slack" })} isTesting={testAlert.isPending} />
+        <NotificationChannelCard title="Microsoft Teams" description="Post alerts through a Teams workflow webhook. Use a current Power Automate/Workflows URL for new configurations." enabled={form.teamsEnabled} onEnabledChange={(teamsEnabled) => updateForm({ teamsEnabled })} inputLabel="Teams workflow webhook URL" inputValue={form.teamsWebhookUrl} onInputChange={(teamsWebhookUrl) => updateForm({ teamsWebhookUrl })} placeholder="https://…logic.azure.com/…" testLabel="Test Teams" onTest={() => testAlert.mutate({ channel: "teams" })} isTesting={testAlert.isPending} />
+      </div></div></Frame>;
+}

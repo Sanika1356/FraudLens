@@ -22,7 +22,7 @@ import {
   useSidebar,
 } from "@/components/ui/sidebar";
 import { useIsMobile } from "@/hooks/useMobile";
-import { Activity, ClipboardList, LayoutDashboard, LogOut, PanelLeft, PlusCircle, Radar, ScrollText, ShieldCheck, Upload, UsersRound } from "lucide-react";
+import { Activity, BellRing, ClipboardList, LayoutDashboard, LogOut, PanelLeft, PlusCircle, Radar, ScrollText, ShieldCheck, Upload, UsersRound } from "lucide-react";
 import { CSSProperties, useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
 import { DashboardLayoutSkeleton } from "./DashboardLayoutSkeleton";
@@ -36,6 +36,7 @@ const menuItems = [
   { icon: Activity, label: "Model Health", path: "/model-health", requiresManager: true },
   { icon: Radar, label: "Drift Monitor", path: "/drift", requiresManager: true },
   { icon: ScrollText, label: "Audit Log", path: "/audit", requiresManager: true },
+  { icon: BellRing, label: "Alert Settings", path: "/alerts", requiresManager: true },
   { icon: UsersRound, label: "Team Access", path: "/team", requiresAdmin: true },
 ];
 
