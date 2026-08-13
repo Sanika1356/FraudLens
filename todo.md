@@ -7,7 +7,6 @@ This list contains only FraudLens work that remains to be implemented.
 
 ## Investigation Workflow and Data Operations
 
-- [ ] Add case assignment, priority, due dates, queues, and workload views for analysts and managers.
 - [ ] Add an immutable audit log for case status changes, analyst assignments, notes, resolutions, authentication events, and administrative actions.
 - [ ] Expand the investigator workspace with case comments, tags, evidence links, attachments, resolution reason codes, and a chronological activity timeline.
 - [ ] Build CSV transaction import with schema validation, row-level error reporting, import summaries, duplicate detection, and bulk risk scoring.

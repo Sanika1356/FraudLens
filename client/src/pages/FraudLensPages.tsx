@@ -17,7 +17,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { trpc } from "@/lib/trpc";
-import { AlertTriangle, ArrowLeft, ArrowRight, BellRing, Bot, CheckCircle2, ChevronRight, CircleDot, Clock3, Database, Fingerprint, KeyRound, ShieldAlert, Sparkles, TrendingUp, UserCog, UserPlus, UserX, UsersRound } from "lucide-react";
+import { AlertTriangle, ArrowLeft, ArrowRight, BellRing, Bot, CalendarClock, CheckCircle2, ChevronRight, CircleDot, Clock3, Database, Fingerprint, KeyRound, ListFilter, ShieldAlert, Sparkles, TrendingUp, UserCheck, UserCog, UserPlus, UserX, UsersRound } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { Bar, BarChart, Cell, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { toast } from "sonner";
@@ -25,6 +25,7 @@ import { useLocation, useRoute } from "wouter";
 
 type RiskLevel = "low" | "medium" | "high";
 type CaseStatus = "under_review" | "confirmed_fraud" | "legitimate";
+type CasePriority = "critical" | "high" | "standard";
 type AssessmentForm = {
   amount: string;
   merchantCategory: string;
@@ -50,6 +51,12 @@ const readableStatus: Record<CaseStatus, string> = {
   confirmed_fraud: "Confirmed fraud",
   legitimate: "Legitimate",
 };
+const priorityStyle: Record<CasePriority, string> = {
+  critical: "border-rose-300/20 bg-rose-300/10 text-rose-200",
+  high: "border-amber-300/20 bg-amber-300/10 text-amber-200",
+  standard: "border-slate-300/15 bg-slate-300/[0.07] text-slate-300",
+};
+const readablePriority: Record<CasePriority, string> = { critical: "Critical", high: "High", standard: "Standard" };
 
 function RiskPill({ level }: { level: RiskLevel }) {
   return <Badge variant="outline" className={`rounded-full px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] ${riskStyle[level]}`}>{level}</Badge>;
@@ -57,8 +64,12 @@ function RiskPill({ level }: { level: RiskLevel }) {
 function StatusPill({ status }: { status: CaseStatus }) {
   return <Badge variant="outline" className={`rounded-full px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.1em] ${statusStyle[status]}`}>{readableStatus[status]}</Badge>;
 }
+function PriorityPill({ priority }: { priority: CasePriority }) {
+  return <Badge variant="outline" className={`rounded-full px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.1em] ${priorityStyle[priority]}`}>{readablePriority[priority]}</Badge>;
+}
 function money(value: number) { return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 }).format(value); }
 function date(value: Date | string) { return new Date(value).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }); }
+function dateInput(value: Date | string | null | undefined) { if (!value) return ""; const parsed = new Date(value); return Number.isNaN(parsed.getTime()) ? "" : `${parsed.getFullYear()}-${String(parsed.getMonth() + 1).padStart(2, "0")}-${String(parsed.getDate()).padStart(2, "0")}`; }
 function Frame({ children }: { children: React.ReactNode }) { return <DashboardLayout><div className="mx-auto max-w-[1540px] fraudlens-enter">{children}</div></DashboardLayout>; }
 function Eyebrow({ children }: { children: React.ReactNode }) { return <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-cyan-300">{children}</p>; }
 function PageTitle({ eyebrow, title, children }: { eyebrow: string; title: string; children?: React.ReactNode }) { return <div className="mb-8 flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between"><div><Eyebrow>{eyebrow}</Eyebrow><h1 className="mt-2 text-3xl font-semibold tracking-tight text-slate-50 sm:text-4xl">{title}</h1></div>{children}</div>; }
@@ -211,4 +222,52 @@ export function AdministratorManagementPage() {
 
 export function DriftPage() {
   const drift = trpc.risk.drift.useQuery(); return <Frame><PageTitle eyebrow="Input surveillance" title="Drift Monitor"><p className="max-w-xl text-sm leading-6 text-slate-500">Compare recent assessment patterns against the training reference to identify features that deserve attention.</p></PageTitle><div className="mb-6 rounded-xl border border-cyan-300/12 bg-cyan-300/[0.045] p-4 text-sm leading-6 text-slate-300"><span className="font-semibold text-cyan-200">How to read this view.</span> Drift does not prove model failure; it is a review signal that indicates the input mix has changed from the benchmark reference.</div>{drift.isLoading ? <QueryState state="loading" label="Loading feature-distribution comparisons…" /> : drift.error ? <QueryState state="error" label="Unable to load drift signals. Please refresh and try again." /> : <div className="grid gap-4 lg:grid-cols-2">{drift.data?.map((item: any) => <Panel key={item.feature}><div className="flex items-start justify-between"><div><p className="text-lg font-semibold text-slate-100">{item.feature}</p><p className="mt-2 text-sm leading-6 text-slate-500">{item.description}</p></div><Badge variant="outline" className={`rounded-full px-2.5 py-1 text-[10px] uppercase tracking-[0.12em] ${item.status === "elevated" ? "border-rose-300/20 bg-rose-300/10 text-rose-200" : item.status === "watch" ? "border-amber-300/20 bg-amber-300/10 text-amber-200" : "border-emerald-300/20 bg-emerald-300/10 text-emerald-200"}`}>{item.status}</Badge></div><div className="mt-6 grid grid-cols-3 gap-3"><div><p className="text-[10px] uppercase tracking-[0.12em] text-slate-600">Baseline</p><p className="mt-1 text-sm font-medium text-slate-200">{item.baseline}</p></div><div><p className="text-[10px] uppercase tracking-[0.12em] text-slate-600">Recent</p><p className="mt-1 text-sm font-medium text-slate-200">{item.recent}</p></div><div><p className="text-[10px] uppercase tracking-[0.12em] text-slate-600">Change</p><p className="mt-1 text-sm font-medium text-cyan-200">+{item.changePercent}%</p></div></div></Panel>)}</div>}</Frame>;
+}
+
+export function CaseQueuesPage() {
+  const { user } = useAuth();
+  const [, setLocation] = useLocation();
+  const utils = trpc.useUtils();
+  const [queue, setQueue] = useState<"all" | "mine" | "unassigned">("all");
+  const [priority, setPriority] = useState<"" | CasePriority>("");
+  const [notes, setNotes] = useState<Record<number, string>>({});
+  const canManage = user?.role === "manager" || user?.role === "admin";
+  const records = trpc.risk.list.useQuery({
+    caseStatus: "under_review",
+    assigneeId: queue === "mine" ? user?.openId : undefined,
+    unassignedOnly: queue === "unassigned" || undefined,
+    casePriority: priority || undefined,
+  }, { enabled: Boolean(user) });
+  const assignees = trpc.risk.assignees.useQuery(undefined, { enabled: canManage });
+  const workload = trpc.risk.workload.useQuery(undefined, { enabled: canManage });
+  const refresh = async () => {
+    await Promise.all([utils.risk.list.invalidate(), utils.risk.overview.invalidate(), utils.risk.workload.invalidate()]);
+  };
+  const claim = trpc.risk.claimCase.useMutation({ onSuccess: async () => { toast.success("Case assigned to you"); await refresh(); }, onError: (error) => toast.error(error.message) });
+  const updateWorkflow = trpc.risk.updateWorkflow.useMutation({ onSuccess: async () => { toast.success("Case workflow updated"); await refresh(); }, onError: (error) => toast.error(error.message) });
+  const updateCase = trpc.risk.updateCase.useMutation({ onSuccess: async () => { toast.success("Case outcome saved"); await refresh(); }, onError: (error) => toast.error(error.message) });
+  const summarize = trpc.risk.summarize.useMutation({ onSuccess: async () => { toast.success("Investigator summary refreshed"); await refresh(); }, onError: () => toast.message("A deterministic explanation is still available.") });
+  const saveOutcome = (record: any, caseStatus: Exclude<CaseStatus, "under_review">) => {
+    const note = (notes[record.id] ?? record.caseNote ?? "").trim();
+    if (note.length < 3) { toast.error("Add a case note of at least three characters before resolving."); return; }
+    updateCase.mutate({ id: record.id, caseStatus, note });
+  };
+  const isOverdue = (record: any) => record.dueAt && new Date(record.dueAt).getTime() < Date.now();
+  const busy = claim.isPending || updateWorkflow.isPending || updateCase.isPending || summarize.isPending;
+  const counts = {
+    all: records.data?.length ?? 0,
+    mine: records.data?.filter((record: any) => record.assigneeId === user?.openId).length ?? 0,
+    unassigned: records.data?.filter((record: any) => !record.assigneeId).length ?? 0,
+  };
+
+  return <Frame><PageTitle eyebrow="Investigation workflow" title="Case Queue"><div className="flex items-center gap-2 text-xs text-slate-500"><ListFilter className="h-4 w-4 text-cyan-300" />Assignment, urgency, and review ownership</div></PageTitle>
+    <div className="mb-6 grid gap-4 sm:grid-cols-3">{[
+      { label: "Active cases", value: workload.data?.active ?? counts.all, detail: "Awaiting an investigator decision", tone: "text-cyan-200" },
+      { label: "Unassigned", value: workload.data?.unassigned ?? counts.unassigned, detail: "Ready to be claimed or assigned", tone: "text-amber-200" },
+      { label: "Overdue", value: workload.data?.overdue ?? 0, detail: "Past the selected service date", tone: "text-rose-200" },
+    ].map((item) => <Panel key={item.label}><p className="text-xs text-slate-500">{item.label}</p><p className={`mt-3 text-3xl font-semibold ${item.tone}`}>{item.value}</p><p className="mt-2 text-xs text-slate-500">{item.detail}</p></Panel>)}</div>
+    {canManage ? <Panel className="mb-6"><div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between"><div><p className="text-sm font-semibold text-slate-100">Manager workload view</p><p className="mt-1 text-xs leading-5 text-slate-500">Open cases are grouped by the assigned investigator. Use this to rebalance work before service dates are missed.</p></div><Button variant="outline" onClick={() => workload.refetch()} disabled={workload.isFetching} className="border-white/10 bg-white/[0.035] text-slate-200 hover:bg-white/[0.08] hover:text-white">Refresh workload</Button></div>{workload.isLoading ? <p className="py-5 text-sm text-slate-500">Loading workload…</p> : <div className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-3">{workload.data?.byAssignee.length ? workload.data.byAssignee.map((member) => <div key={member.userId} className="rounded-xl border border-white/[0.07] bg-[#07111e]/65 p-4"><p className="text-sm font-medium text-slate-100">{member.name}</p><div className="mt-3 grid grid-cols-3 gap-2 text-center"><div><p className="text-lg font-semibold text-slate-100">{member.open}</p><p className="text-[10px] uppercase tracking-[0.1em] text-slate-500">Open</p></div><div><p className="text-lg font-semibold text-rose-200">{member.critical}</p><p className="text-[10px] uppercase tracking-[0.1em] text-slate-500">Critical</p></div><div><p className="text-lg font-semibold text-amber-200">{member.overdue}</p><p className="text-[10px] uppercase tracking-[0.1em] text-slate-500">Overdue</p></div></div></div>) : <p className="py-4 text-sm text-slate-500">No active cases have been assigned yet.</p>}</div>}</Panel> : null}
+    <Panel><div className="mb-5 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between"><div className="flex flex-wrap gap-2">{(["all", "mine", "unassigned"] as const).map((item) => <Button key={item} size="sm" variant={queue === item ? "default" : "outline"} onClick={() => setQueue(item)} className={queue === item ? "bg-cyan-300 text-slate-950 hover:bg-cyan-200" : "border-white/10 bg-white/[0.025] text-slate-300 hover:bg-white/[0.08] hover:text-white"}>{item === "all" ? "All active" : item === "mine" ? "My cases" : "Unassigned"}</Button>)}</div><select aria-label="Filter by priority" value={priority} onChange={(event) => setPriority(event.target.value as "" | CasePriority)} className="h-9 rounded-md border border-white/10 bg-[#07111e] px-3 text-xs text-slate-200 outline-none focus:ring-2 focus:ring-cyan-300"><option value="">All priorities</option><option value="critical">Critical</option><option value="high">High</option><option value="standard">Standard</option></select></div>
+      {records.isLoading ? <QueryState state="loading" label="Loading active case queue…" /> : records.error ? <QueryState state="error" label="Unable to load active cases. Please refresh and try again." /> : records.data?.length === 0 ? <QueryState state="empty" label="No active cases match this queue." /> : <div className="space-y-4">{(records.data ?? []).map((record: any) => <div key={record.id} className="rounded-xl border border-white/[0.07] bg-[#07111e]/65 p-4 sm:p-5"><div className="flex flex-col gap-4 xl:flex-row xl:justify-between"><div className="max-w-2xl"><div className="flex flex-wrap items-center gap-2"><p className="font-mono text-xs text-slate-500">{record.reference}</p><RiskPill level={record.riskLevel} /><PriorityPill priority={record.casePriority} />{isOverdue(record) ? <Badge variant="outline" className="border-rose-300/20 bg-rose-300/10 text-[10px] uppercase tracking-[0.1em] text-rose-200">Overdue</Badge> : null}</div><button onClick={() => setLocation(`/transactions/${record.id}`)} className="mt-3 text-left text-lg font-semibold text-slate-100 hover:text-cyan-200 focus:outline-none focus:ring-2 focus:ring-cyan-300">{record.merchantName} · {money(record.amount)}</button><p className="mt-2 text-sm leading-6 text-slate-400">{record.llmSummary || record.deterministicExplanation}</p><div className="mt-4 flex flex-wrap gap-2 text-xs"><span className="rounded-md bg-white/[0.05] px-2.5 py-1.5 text-slate-300"><UserCheck className="mr-1.5 inline h-3.5 w-3.5 text-cyan-300" />{record.assigneeName ?? "Unassigned"}</span><span className="rounded-md bg-white/[0.05] px-2.5 py-1.5 text-slate-300"><CalendarClock className="mr-1.5 inline h-3.5 w-3.5 text-cyan-300" />{record.dueAt ? `Due ${date(record.dueAt)}` : "No due date"}</span></div></div><div className="w-full space-y-3 xl:max-w-[400px]">{canManage ? <><div className="grid gap-2 sm:grid-cols-3 xl:grid-cols-1"><select aria-label={`Assignee for ${record.reference}`} value={record.assigneeId ?? ""} disabled={busy || assignees.isLoading} onChange={(event) => updateWorkflow.mutate({ id: record.id, assigneeId: event.target.value || null, casePriority: record.casePriority, dueAt: record.dueAt ? new Date(record.dueAt) : null })} className="h-9 rounded-md border border-white/10 bg-[#0c1a28] px-2.5 text-xs text-slate-200 outline-none focus:ring-2 focus:ring-cyan-300"><option value="">Unassigned</option>{assignees.data?.map((member) => <option key={member.userId} value={member.userId}>{member.name ?? member.email ?? member.userId}</option>)}</select><select aria-label={`Priority for ${record.reference}`} value={record.casePriority} disabled={busy} onChange={(event) => updateWorkflow.mutate({ id: record.id, assigneeId: record.assigneeId, casePriority: event.target.value as CasePriority, dueAt: record.dueAt ? new Date(record.dueAt) : null })} className="h-9 rounded-md border border-white/10 bg-[#0c1a28] px-2.5 text-xs text-slate-200 outline-none focus:ring-2 focus:ring-cyan-300"><option value="critical">Critical</option><option value="high">High</option><option value="standard">Standard</option></select><Input aria-label={`Due date for ${record.reference}`} type="date" value={dateInput(record.dueAt)} disabled={busy} onChange={(event) => updateWorkflow.mutate({ id: record.id, assigneeId: record.assigneeId, casePriority: record.casePriority, dueAt: event.target.value ? new Date(`${event.target.value}T17:00:00`) : null })} className="h-9 border-white/10 bg-[#0c1a28] text-xs text-slate-200 focus-visible:ring-cyan-300" /></div></> : !record.assigneeId ? <Button size="sm" onClick={() => claim.mutate({ id: record.id })} disabled={busy} className="bg-cyan-300 text-slate-950 hover:bg-cyan-200"><UserCheck className="mr-1.5 h-3.5 w-3.5" />Claim case</Button> : null}<label htmlFor={`queue-note-${record.id}`} className="sr-only">Investigation note for {record.reference}</label><Textarea id={`queue-note-${record.id}`} value={notes[record.id] ?? record.caseNote ?? ""} onChange={(event) => setNotes((current) => ({ ...current, [record.id]: event.target.value }))} placeholder="Add investigation note before resolving…" className="min-h-[76px] border-white/10 bg-[#0c1a28] text-sm text-slate-200 placeholder:text-slate-600 focus-visible:ring-cyan-300" /><div className="flex flex-wrap gap-2"><Button size="sm" variant="outline" disabled={busy} onClick={() => summarize.mutate({ id: record.id })} className="border-white/10 bg-white/[0.03] text-cyan-200 hover:bg-white/[0.08]"><Bot className="mr-1.5 h-3.5 w-3.5" />Explain</Button><Button size="sm" disabled={busy} onClick={() => saveOutcome(record, "confirmed_fraud")} className="bg-rose-300 text-rose-950 hover:bg-rose-200">Confirm fraud</Button><Button size="sm" disabled={busy} onClick={() => saveOutcome(record, "legitimate")} className="bg-emerald-300 text-emerald-950 hover:bg-emerald-200">Legitimate</Button></div></div></div></div>)}</div>}</Panel>
+  </Frame>;
 }

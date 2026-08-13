@@ -34,6 +34,14 @@ export const caseUpdateSchema = z.object({
   note: z.string().trim().min(3).max(1000),
 });
 
+export const CASE_PRIORITIES = ["critical", "high", "standard"] as const;
+export const caseWorkflowUpdateSchema = z.object({
+  id: z.number().int().positive(),
+  assigneeId: z.string().trim().min(1).max(64).nullable(),
+  casePriority: z.enum(CASE_PRIORITIES),
+  dueAt: z.date().nullable(),
+});
+
 const recordsByOrganization = new Map<string, RiskRecord[]>();
 let nextId = Math.max(...demoTransactions.map((record) => record.id)) + 1;
 
@@ -42,6 +50,7 @@ function cloneDemoTransaction(record: RiskRecord): RiskRecord {
     ...record,
     createdAt: new Date(record.createdAt),
     factors: [...record.factors],
+    dueAt: record.dueAt ? new Date(record.dueAt) : null,
   };
 }
 
@@ -66,6 +75,18 @@ export function applyCaseUpdate(record: RiskRecord, input: z.infer<typeof caseUp
   record.caseStatus = input.caseStatus;
   record.caseNote = input.note.trim();
   record.isNew = false;
+  return record;
+}
+
+export function applyCaseWorkflowUpdate(
+  record: RiskRecord,
+  input: z.infer<typeof caseWorkflowUpdateSchema>,
+  assigneeName: string | null,
+) {
+  record.assigneeId = input.assigneeId;
+  record.assigneeName = assigneeName;
+  record.casePriority = input.casePriority;
+  record.dueAt = input.dueAt ? new Date(input.dueAt) : null;
   return record;
 }
 
@@ -96,6 +117,10 @@ function asInsertTransaction(record: RiskRecord) {
     llmNextStep: record.llmNextStep,
     caseStatus: record.caseStatus,
     caseNote: record.caseNote,
+    assigneeId: record.assigneeId,
+    assigneeName: record.assigneeName,
+    casePriority: record.casePriority,
+    dueAt: record.dueAt,
     isNew: record.isNew,
   } as const;
 }
@@ -185,6 +210,9 @@ export const appRouter = router({
     list: organizationProcedure.input(z.object({
       riskLevel: z.enum(RISK_LEVELS).optional(),
       caseStatus: z.enum(CASE_STATUSES).optional(),
+      casePriority: z.enum(CASE_PRIORITIES).optional(),
+      assigneeId: z.string().trim().min(1).max(64).optional(),
+      unassignedOnly: z.boolean().optional(),
       merchantCategory: z.string().trim().max(80).optional(),
       dateFrom: z.date().optional(),
       dateTo: z.date().optional(),
@@ -192,6 +220,9 @@ export const appRouter = router({
       const filtered = getRecords(ctx.orgId).filter((record) => {
         if (input?.riskLevel && record.riskLevel !== input.riskLevel) return false;
         if (input?.caseStatus && record.caseStatus !== input.caseStatus) return false;
+        if (input?.casePriority && record.casePriority !== input.casePriority) return false;
+        if (input?.assigneeId && record.assigneeId !== input.assigneeId) return false;
+        if (input?.unassignedOnly && record.assigneeId !== null) return false;
         if (input?.merchantCategory && record.merchantCategory.toLowerCase() !== input.merchantCategory.toLowerCase()) return false;
         if (input?.dateFrom && record.createdAt < input.dateFrom) return false;
         if (input?.dateTo && record.createdAt > input.dateTo) return false;
@@ -209,6 +240,10 @@ export const appRouter = router({
         createdAt: new Date(),
         caseStatus: "under_review",
         caseNote: null,
+        assigneeId: null,
+        assigneeName: null,
+        casePriority: decision.riskLevel === "high" ? "critical" : decision.riskLevel === "medium" ? "high" : "standard",
+        dueAt: decision.riskLevel === "high" ? new Date(Date.now() + 4 * 60 * 60 * 1000) : decision.riskLevel === "medium" ? new Date(Date.now() + 24 * 60 * 60 * 1000) : null,
         isNew: decision.riskLevel === "high",
         llmSummary: null,
         llmNextStep: null,
@@ -225,6 +260,55 @@ export const appRouter = router({
       applyCaseUpdate(record, input);
       await persistTransaction(ctx.orgId, asInsertTransaction(record));
       return record;
+    }),
+    assignees: organizationProcedure.query(async ({ ctx }) => {
+      const directory = await getWorkspaceDirectory(ctx.orgId);
+      return directory.members.map((member) => ({ userId: member.userId, name: member.name, email: member.email, applicationRole: member.applicationRole }));
+    }),
+    claimCase: organizationProcedure.input(z.object({ id: z.number().int().positive() })).mutation(async ({ ctx, input }) => {
+      const record = getRecord(ctx.orgId, input.id);
+      if (!record) throw new Error("Transaction not found");
+      if (record.caseStatus !== "under_review") throw new Error("Only active cases can be assigned.");
+      if (record.assigneeId && record.assigneeId !== ctx.user!.openId) throw new Error("This case is already assigned to another investigator.");
+      record.assigneeId = ctx.user!.openId;
+      record.assigneeName = ctx.user!.name ?? ctx.user!.email ?? "Assigned investigator";
+      await persistTransaction(ctx.orgId, asInsertTransaction(record));
+      return record;
+    }),
+    updateWorkflow: organizationManagerProcedure.input(caseWorkflowUpdateSchema).mutation(async ({ ctx, input }) => {
+      const record = getRecord(ctx.orgId, input.id);
+      if (!record) throw new Error("Transaction not found");
+      if (record.caseStatus !== "under_review") throw new Error("Only active cases can be updated.");
+      let assigneeName: string | null = null;
+      if (input.assigneeId) {
+        const directory = await getWorkspaceDirectory(ctx.orgId);
+        const assignee = directory.members.find((member) => member.userId === input.assigneeId);
+        if (!assignee) throw new Error("Select an active member of this organization as the assignee.");
+        assigneeName = assignee.name ?? assignee.email ?? "Assigned investigator";
+      }
+      applyCaseWorkflowUpdate(record, input, assigneeName);
+      await persistTransaction(ctx.orgId, asInsertTransaction(record));
+      return record;
+    }),
+    workload: organizationManagerProcedure.query(({ ctx }) => {
+      const activeCases = getRecords(ctx.orgId).filter((record) => record.caseStatus === "under_review");
+      const now = Date.now();
+      const byAssignee = new Map<string, { userId: string; name: string; open: number; critical: number; overdue: number }>();
+      for (const record of activeCases) {
+        if (!record.assigneeId) continue;
+        const current = byAssignee.get(record.assigneeId) ?? { userId: record.assigneeId, name: record.assigneeName ?? "Assigned investigator", open: 0, critical: 0, overdue: 0 };
+        current.open += 1;
+        if (record.casePriority === "critical") current.critical += 1;
+        if (record.dueAt && record.dueAt.getTime() < now) current.overdue += 1;
+        byAssignee.set(record.assigneeId, current);
+      }
+      const unassigned = activeCases.filter((record) => !record.assigneeId);
+      return {
+        active: activeCases.length,
+        unassigned: unassigned.length,
+        overdue: activeCases.filter((record) => record.dueAt && record.dueAt.getTime() < now).length,
+        byAssignee: Array.from(byAssignee.values()).sort((first, second) => second.open - first.open || first.name.localeCompare(second.name)),
+      };
     }),
     summarize: organizationProcedure.input(z.object({ id: z.number().int().positive() })).mutation(async ({ ctx, input }) => {
       const record = getRecord(ctx.orgId, input.id);

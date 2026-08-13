@@ -114,6 +114,17 @@ describe("Clerk-protected FraudLens APIs", () => {
     })).rejects.toMatchObject({ code: "FORBIDDEN" });
   });
 
+  it("allows analysts to claim cases but reserves assignment and workload management for managers", async () => {
+    const analyst = appRouter.createCaller(createContext(createUser("analyst")));
+    const manager = appRouter.createCaller(createContext(createUser("manager")));
+    const record = (await analyst.risk.list({ caseStatus: "under_review", unassignedOnly: true }))[0];
+    if (!record) throw new Error("Expected an unassigned demo case");
+
+    await expect(analyst.risk.claimCase({ id: record.id })).resolves.toMatchObject({ assigneeId: "analyst_test_123" });
+    await expect(analyst.risk.updateWorkflow({ id: record.id, assigneeId: null, casePriority: "high", dueAt: null })).rejects.toMatchObject({ code: "FORBIDDEN" });
+    await expect(manager.risk.workload()).resolves.toMatchObject({ active: expect.any(Number) });
+  });
+
   it("prevents an analyst from viewing model-monitoring data", async () => {
     const caller = appRouter.createCaller(createContext(createUser("analyst")));
 

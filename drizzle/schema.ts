@@ -32,6 +32,11 @@ export const transactions = mysqlTable("transactions", {
   llmNextStep: text("llmNextStep"),
   caseStatus: mysqlEnum("caseStatus", ["under_review", "confirmed_fraud", "legitimate"]).default("under_review").notNull(),
   caseNote: text("caseNote"),
+  /** Current organization member responsible for an open case. */
+  assigneeId: varchar("assigneeId", { length: 64 }),
+  assigneeName: varchar("assigneeName", { length: 160 }),
+  casePriority: mysqlEnum("casePriority", ["critical", "high", "standard"]).default("standard").notNull(),
+  dueAt: timestamp("dueAt"),
   isNew: boolean("isNew").default(true).notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),

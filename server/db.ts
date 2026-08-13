@@ -62,6 +62,10 @@ export async function persistTransaction(
         llmNextStep: organizationRecord.llmNextStep,
         caseStatus: organizationRecord.caseStatus,
         caseNote: organizationRecord.caseNote,
+        assigneeId: organizationRecord.assigneeId,
+        assigneeName: organizationRecord.assigneeName,
+        casePriority: organizationRecord.casePriority,
+        dueAt: organizationRecord.dueAt,
         isNew: organizationRecord.isNew,
       },
     });
