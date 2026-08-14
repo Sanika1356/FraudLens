@@ -106,6 +106,12 @@ After deployment, verify the Railway domain returns `{"status":"ok"}` at `/healt
 
 [^railway-health]: [Railway health checks](https://docs.railway.com/deployments/healthchecks)
 
+## Production hardening and recovery
+
+FraudLens applies production-safe HTTP headers, removes the Express fingerprint header, uses bounded API request parsing, limits `/api` traffic by client IP, retains the existing per-key public API limit, and refuses production startup when its database or required Clerk variables are missing. The full [production operations runbook](./docs/OPERATIONS.md) explains the security variables, immutable audit-log handling, TiDB Cloud export procedure, and a tested restore-to-new-instance recovery process.
+
+> **Operational and compliance note:** These controls reduce common deployment risk, but do not by themselves make a demonstration application suitable for regulated or real-customer data. Retention and preservation requirements require approval from the organization’s legal or compliance reviewer.
+
 ## Monitoring with Sentry
 
 FraudLens supports optional, privacy-safe monitoring through Sentry. The client and server initialize independently only when their DSNs are configured, so the application continues to run normally without Sentry. The checked-in configuration captures unhandled React, React Query, Express, tRPC, and public-API failures, sends a small sample of performance traces, and records fixed-metadata server error logs. Sentry's Developer plan is currently **$0** for one user and includes Error Monitoring, Tracing, email alerts, and up to 10 custom dashboards; confirm its current limits and avoid upgrading or enabling paid overages if you need to remain on the free tier.[^sentry-pricing]
@@ -155,4 +161,4 @@ To make CI a mandatory release gate, open the repository’s **Settings → Rule
 
 ## Current limitations and next steps
 
-The app is a polished portfolio demonstration, not a production deployment. A production version would require approved data governance, security reviews, role-based authorization, audit trails, calibrated alerts, retraining governance, formal fairness assessment, and integration with a secure event stream.
+The app remains a polished portfolio demonstration. Its deployment, monitoring, authorization, audit, and recovery controls provide a stronger operational baseline, but a real-customer or regulated rollout still requires approved data governance, an independent security review, calibrated alert policy, retraining governance, formal fairness assessment, and integration with a secure event stream.

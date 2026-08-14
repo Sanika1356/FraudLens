@@ -13,7 +13,12 @@ import { registerStorageProxy } from "./storageProxy";
 import { appRouter } from "../routers";
 import { createContext } from "./context";
 import { serveStatic, setupVite } from "./vite";
+import {
+  installSecurityMiddleware,
+  requestParsingErrorHandler,
+} from "./security";
 import { registerPublicApiRoutes } from "../publicApi";
+import { validateProductionEnvironment } from "./env";
 
 function isPortAvailable(port: number): Promise<boolean> {
   return new Promise(resolve => {
@@ -35,14 +40,22 @@ async function findAvailablePort(startPort: number = 3000): Promise<number> {
 }
 
 async function startServer() {
+  validateProductionEnvironment();
   const app = express();
   const server = createServer(app);
+  const securityConfig = installSecurityMiddleware(app);
   app.get("/health", (_req, res) => {
     res.status(200).json({ status: "ok" });
   });
-  // Configure body parser with larger size limit for file uploads
-  app.use(express.json({ limit: "50mb" }));
-  app.use(express.urlencoded({ limit: "50mb", extended: true }));
+  // Evidence files are uploaded directly to private object storage, so API
+  // payloads can remain deliberately small and inexpensive to parse.
+  app.use(express.json({ limit: securityConfig.bodyLimitBytes }));
+  app.use(
+    express.urlencoded({
+      limit: securityConfig.bodyLimitBytes,
+      extended: false,
+    })
+  );
   registerPublicApiRoutes(app);
   app.use(clerkMiddleware());
   registerStorageProxy(app);
@@ -63,13 +76,14 @@ async function startServer() {
       },
     })
   );
-  installMonitoringErrorHandler(app);
   // development mode uses Vite, production mode uses static files
   if (process.env.NODE_ENV === "development") {
     await setupVite(app, server);
   } else {
     serveStatic(app);
   }
+  app.use(requestParsingErrorHandler);
+  installMonitoringErrorHandler(app);
 
   const preferredPort = Number.parseInt(process.env.PORT || "3000", 10);
   const port =
