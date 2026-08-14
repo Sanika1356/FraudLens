@@ -3,6 +3,7 @@ import type { CreateExpressContextOptions } from "@trpc/server/adapters/express"
 import type { User } from "../../drizzle/schema";
 import { getUserByOpenId, upsertUser } from "../db";
 import { resolveBootstrapRole } from "./env";
+import { captureServerException, logServerError } from "./monitoring";
 
 export type TrpcContext = {
   req: CreateExpressContextOptions["req"];
@@ -48,6 +49,11 @@ export async function createContext(
       }
     } catch (error) {
       console.error("Unable to synchronize the authenticated FraudLens user.", error);
+      captureServerException(error, { area: "authentication", operation: "synchronize_user" });
+      logServerError("Unable to synchronize the authenticated FraudLens user", {
+        area: "authentication",
+        operation: "synchronize_user",
+      });
     }
 
     // A local database is optional in development, so an authenticated Clerk

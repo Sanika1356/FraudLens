@@ -106,6 +106,33 @@ After deployment, verify the Railway domain returns `{"status":"ok"}` at `/healt
 
 [^railway-health]: [Railway health checks](https://docs.railway.com/deployments/healthchecks)
 
+## Monitoring with Sentry
+
+FraudLens supports optional, privacy-safe monitoring through Sentry. The client and server initialize independently only when their DSNs are configured, so the application continues to run normally without Sentry. The checked-in configuration captures unhandled React, React Query, Express, tRPC, and public-API failures, sends a small sample of performance traces, and records fixed-metadata server error logs. Sentry's Developer plan is currently **$0** for one user and includes Error Monitoring, Tracing, email alerts, and up to 10 custom dashboards; confirm its current limits and avoid upgrading or enabling paid overages if you need to remain on the free tier.[^sentry-pricing]
+
+> **Privacy policy enforced in code:** FraudLens disables automatic user information, cookies, HTTP headers, HTTP bodies, URL query parameters, stack-frame local variables, and session breadcrumbs. A second filter removes user, request, and arbitrary diagnostic payloads from every captured event and redacts email addresses, Bearer credentials, query values, and sensitive attribute names before delivery. Do not add transaction data, names, email addresses, API keys, webhook URLs, or raw request objects to Sentry context.
+
+| Variable | Scope | Required | Purpose |
+|---|---|---:|---|
+| `VITE_SENTRY_DSN` | Client-visible | Yes, for browser monitoring | DSN for a Sentry React project. A DSN is safe to expose in the browser; it identifies the reporting destination but does not grant project administration. |
+| `SENTRY_DSN` | Server-only | Yes, for server monitoring | DSN for a separate Sentry Node/Express project. |
+| `VITE_SENTRY_ENVIRONMENT` / `SENTRY_ENVIRONMENT` | Client / server | No | Environment label, such as `production`. |
+| `VITE_SENTRY_TRACES_SAMPLE_RATE` / `SENTRY_TRACES_SAMPLE_RATE` | Client / server | No | Decimal trace sample rate between `0` and `1`; FraudLens defaults to `0.1` in production and `0` outside it. |
+| `VITE_SENTRY_RELEASE` / `SENTRY_RELEASE` | Client / server / build | No | Shared release name, such as `fraudlens@<commit-sha>`. Set both values to match uploaded browser source maps to client events. |
+| `SENTRY_ORG` and `SENTRY_PROJECT` | Build-only | No | Organization and React project slugs used only for source-map upload. |
+| `SENTRY_AUTH_TOKEN` | Build-only, secret | No | Sentry organization or personal token with the documented source-map upload permissions. Never use a `VITE_` prefix or commit this value. |
+
+To activate monitoring, create two projects in your Sentry account: a **React** project for the client and a **Node/Express** project for the server. Copy the React project DSN into `VITE_SENTRY_DSN` and the server project's DSN into `SENTRY_DSN`. Add the same values to Railway service variables. Set both environment labels to `production` and begin with the default `0.1` trace rate to minimize free-tier event volume. Sentry documents both browser and Node initialization, including the requirement that each SDK initializes before the rest of the corresponding application entry point.[^sentry-react] [^sentry-node]
+
+For readable production browser stack traces, create a source-map upload token in Sentry with **Project: Read & Write** and **Release: Admin** permissions. Add `SENTRY_AUTH_TOKEN`, `SENTRY_ORG`, and the React `SENTRY_PROJECT` only to Railway's build environment. The Vite configuration enables hidden source maps only when all three values are present, uploads them as part of the production build, and deletes the generated `.map` files afterward so source maps are not publicly served.[^sentry-vite]
+
+After deployment, visit the dashboard, invoke a deliberately safe error test only in a development or staging environment, and confirm that Sentry shows the event with the appropriate client or server project, `production` environment, and no user, request, body, cookie, query, or breadcrumb fields. Do not trigger errors with real transaction or customer data.
+
+[^sentry-pricing]: [Sentry pricing](https://sentry.io/pricing/)
+[^sentry-react]: [Sentry React SDK setup](https://docs.sentry.io/platforms/javascript/guides/react/)
+[^sentry-node]: [Sentry Node SDK setup](https://docs.sentry.io/platforms/javascript/guides/node/)
+[^sentry-vite]: [Sentry Vite source-map uploads](https://docs.sentry.io/platforms/javascript/sourcemaps/uploading/vite/)
+
 ## Current limitations and next steps
 
 The app is a polished portfolio demonstration, not a production deployment. A production version would require approved data governance, security reviews, role-based authorization, audit trails, calibrated alerts, retraining governance, formal fairness assessment, and integration with a secure event stream.

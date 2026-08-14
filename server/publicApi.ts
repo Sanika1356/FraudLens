@@ -4,6 +4,7 @@ import { extractBearerApiKey, hashApiKey, isApiKeyActive, parseApiKeyScopes, PUB
 import { countApiRequestsSince, getApiKeyByHash, getTransactionReferencesByOrganization, recordApiRequestLog, touchApiKeyLastUsed } from "./db";
 import { riskInputSchema, submitRiskAssessment } from "./routers";
 import type { RiskInput } from "./riskEngine";
+import { captureServerException, logServerError } from "./_core/monitoring";
 
 const ENDPOINT = "/api/v1/transactions/assess";
 const apiTransactionSchema = riskInputSchema.extend({
@@ -37,6 +38,8 @@ async function logRequest(input: {
   } catch (error) {
     // Request logging is intentionally non-blocking: a transient telemetry failure must not create duplicate client retries.
     console.error("[FraudLens] Public API request log failed", error);
+    captureServerException(error, { area: "public_api", operation: "record_request_log", requestId: input.requestId });
+    logServerError("Public API request log failed", { area: "public_api", operation: "record_request_log" });
   }
 }
 
@@ -123,6 +126,8 @@ async function handleTransactionAssessment(request: Request, response: Response)
     });
   } catch (error) {
     console.error("[FraudLens] Public API transaction assessment failed", error);
+    captureServerException(error, { area: "public_api", operation: "assess_transaction", requestId: id });
+    logServerError("Public API transaction assessment failed", { area: "public_api", operation: "assess_transaction" });
     await logRequest({ orgId: apiKey.orgId, apiKeyId: apiKey.id, requestId: id, responseStatus: 500, transactionReference: reference ?? null });
     respondError(response, 500, "internal_error", "The transaction could not be assessed. Retry with the same reference after a short delay.", id);
   }
@@ -164,8 +169,11 @@ export function registerPublicApiRoutes(app: Express) {
   app.post(ENDPOINT, (request, response) => {
     void handleTransactionAssessment(request, response).catch((error: unknown) => {
       console.error("[FraudLens] Public API infrastructure failure", error);
+      const id = requestId();
+      captureServerException(error, { area: "public_api", operation: "infrastructure", requestId: id });
+      logServerError("Public API infrastructure failure", { area: "public_api", operation: "infrastructure" });
       if (!response.headersSent) {
-        respondError(response, 500, "internal_error", "The request could not be completed. Retry after a short delay.", requestId());
+        respondError(response, 500, "internal_error", "The request could not be completed. Retry after a short delay.", id);
       }
     });
   });

@@ -1,4 +1,5 @@
 import "dotenv/config";
+import { captureServerException, installMonitoringErrorHandler, logServerError } from "./monitoring";
 import express from "express";
 import { createServer } from "http";
 import net from "net";
@@ -47,8 +48,15 @@ async function startServer() {
     createExpressMiddleware({
       router: appRouter,
       createContext,
+      onError({ error, path, type }) {
+        if (error.code !== "INTERNAL_SERVER_ERROR") return;
+        const operation = path ?? type;
+        captureServerException(error, { area: "trpc", operation });
+        logServerError("Unexpected tRPC procedure failure", { area: "trpc", operation });
+      },
     })
   );
+  installMonitoringErrorHandler(app);
   // development mode uses Vite, production mode uses static files
   if (process.env.NODE_ENV === "development") {
     await setupVite(app, server);
@@ -68,4 +76,7 @@ async function startServer() {
   });
 }
 
-startServer().catch(console.error);
+startServer().catch(error => {
+  captureServerException(error, { area: "startup", operation: "start_server" });
+  console.error(error);
+});
