@@ -80,6 +80,32 @@ FraudLens is designed around a few practical review principles:
 3. **Clear separation:** The transparent assessment policy and anonymized benchmark evaluation are shown as distinct evidence sources.
 4. **Focused workflow:** The workspace captures case notes, updates alert queues, validates analyst input, and surfaces input-distribution changes for review.
 
+## Deploying on Railway
+
+FraudLens includes a [`railway.toml`](./railway.toml) configuration for Railpack builds, database migrations before each release, a production start command, safe restart behavior, and a `/health` endpoint that returns HTTP 200. Railway must build with the same `VITE_CLERK_PUBLISHABLE_KEY` used by the client and run with the server-only variables below. Add these in **Railway → Project → Service → Variables**; never commit them to Git.
+
+| Variable | Required | Purpose |
+|---|---:|---|
+| `VITE_CLERK_PUBLISHABLE_KEY` | Yes | Clerk public key compiled into the React client during the Railway build. |
+| `CLERK_PUBLISHABLE_KEY` | Yes | Clerk publishable key used by the Express authentication middleware. |
+| `CLERK_SECRET_KEY` | Yes | Server-only Clerk secret key. |
+| `OWNER_OPEN_ID` | Yes | Clerk user ID that receives the initial administrator role. |
+| `DATABASE_URL` | Yes | TiDB Cloud MySQL connection string, including its TLS parameters. |
+| `SUPABASE_URL` | Yes | Supabase project URL for private evidence storage. |
+| `SUPABASE_SERVICE_ROLE_KEY` | Yes | Server-only Supabase service-role key. |
+| `SUPABASE_STORAGE_BUCKET` | Yes | Private evidence bucket name, normally `fraudlens-evidence`. |
+| `RESEND_API_KEY` | No | Enables email alerts and weekly risk summaries. |
+| `RESEND_FROM_EMAIL` | No | Verified Resend sender; omit it for limited `onboarding@resend.dev` testing. |
+| `MANAGER_OPEN_IDS` | No | Comma-separated Clerk user IDs that should start with manager access. |
+
+To release, create a Railway project from the GitHub repository and select the `main` branch. The checked-in deployment configuration performs `pnpm install --frozen-lockfile && pnpm build`, then applies committed Drizzle migrations before it starts the production server. Generate a Railway domain after the first successful deployment. For a custom domain, add it under the service's networking settings, then create the DNS record Railway provides and add the final `https://` domain to Clerk's production allowed origins and redirect URLs.
+
+> **Cost safeguard:** Railway's free plan and trial limits can change. Before enabling a service, confirm the active plan, configure a Compute Usage hard limit in Railway's Workspace Usage settings, and enable Serverless/app sleep if cold starts are acceptable. A hard limit stops the workload when the threshold is reached. Consult Railway's current [pricing](https://railway.com/pricing) and [cost-control documentation](https://docs.railway.com/pricing/cost-control) before release.
+
+After deployment, verify the Railway domain returns `{"status":"ok"}` at `/health`, sign in through Clerk, create or select an organization, review a dashboard route, and confirm a public API request or scheduled summary only after its secrets are configured. Railway will not direct traffic to a new deployment until the configured health endpoint returns HTTP 200.[^railway-health]
+
+[^railway-health]: [Railway health checks](https://docs.railway.com/deployments/healthchecks)
+
 ## Current limitations and next steps
 
 The app is a polished portfolio demonstration, not a production deployment. A production version would require approved data governance, security reviews, role-based authorization, audit trails, calibrated alerts, retraining governance, formal fairness assessment, and integration with a secure event stream.
