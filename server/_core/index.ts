@@ -1,5 +1,9 @@
 import "dotenv/config";
-import { captureServerException, installMonitoringErrorHandler, logServerError } from "./monitoring";
+import {
+  captureServerException,
+  installMonitoringErrorHandler,
+  logServerError,
+} from "./monitoring";
 import express from "express";
 import { createServer } from "http";
 import net from "net";
@@ -52,7 +56,10 @@ async function startServer() {
         if (error.code !== "INTERNAL_SERVER_ERROR") return;
         const operation = path ?? type;
         captureServerException(error, { area: "trpc", operation });
-        logServerError("Unexpected tRPC procedure failure", { area: "trpc", operation });
+        logServerError("Unexpected tRPC procedure failure", {
+          area: "trpc",
+          operation,
+        });
       },
     })
   );
@@ -65,7 +72,10 @@ async function startServer() {
   }
 
   const preferredPort = Number.parseInt(process.env.PORT || "3000", 10);
-  const port = process.env.NODE_ENV === "production" ? preferredPort : await findAvailablePort(preferredPort);
+  const port =
+    process.env.NODE_ENV === "production"
+      ? preferredPort
+      : await findAvailablePort(preferredPort);
 
   if (port !== preferredPort) {
     console.log(`Port ${preferredPort} is busy, using port ${port} instead`);

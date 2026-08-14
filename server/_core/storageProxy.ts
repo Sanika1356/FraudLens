@@ -12,7 +12,10 @@ export function registerStorageProxy(app: Express) {
     }
 
     const key = (req.params as Record<string, string>)[0];
-    if (!key || !key.startsWith(`evidence/${encodeURIComponent(auth.orgId)}/`)) {
+    if (
+      !key ||
+      !key.startsWith(`evidence/${encodeURIComponent(auth.orgId)}/`)
+    ) {
       res.status(404).send("Evidence file not found.");
       return;
     }

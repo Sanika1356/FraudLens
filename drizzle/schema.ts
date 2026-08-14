@@ -1,4 +1,14 @@
-import { boolean, index, int, mysqlEnum, mysqlTable, text, timestamp, uniqueIndex, varchar } from "drizzle-orm/mysql-core";
+import {
+  boolean,
+  index,
+  int,
+  mysqlEnum,
+  mysqlTable,
+  text,
+  timestamp,
+  uniqueIndex,
+  varchar,
+} from "drizzle-orm/mysql-core";
 
 export const users = mysqlTable("users", {
   id: int("id").autoincrement().primaryKey(),
@@ -6,43 +16,62 @@ export const users = mysqlTable("users", {
   name: text("name"),
   email: varchar("email", { length: 320 }),
   loginMethod: varchar("loginMethod", { length: 64 }),
-  role: mysqlEnum("role", ["analyst", "manager", "admin"]).default("analyst").notNull(),
+  role: mysqlEnum("role", ["analyst", "manager", "admin"])
+    .default("analyst")
+    .notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
   lastSignedIn: timestamp("lastSignedIn").defaultNow().notNull(),
 });
 
-export const transactions = mysqlTable("transactions", {
-  id: int("id").autoincrement().primaryKey(),
-  /** Clerk organization identifier. Nullable to preserve existing rows during migration. */
-  orgId: varchar("orgId", { length: 64 }),
-  reference: varchar("reference", { length: 32 }).notNull(),
-  amountCents: int("amountCents").notNull(),
-  merchantCategory: varchar("merchantCategory", { length: 80 }).notNull(),
-  transactionCountry: varchar("transactionCountry", { length: 3 }).notNull(),
-  accountCountry: varchar("accountCountry", { length: 3 }).notNull(),
-  deviceStatus: mysqlEnum("deviceStatus", ["known", "new"]).notNull(),
-  transactionHour: int("transactionHour").notNull(),
-  recentTransactionCount: int("recentTransactionCount").notNull(),
-  riskLabel: mysqlEnum("riskLabel", ["low", "medium", "high"]).notNull(),
-  riskProbability: int("riskProbability").notNull(),
-  factorJson: text("factorJson").notNull(),
-  deterministicExplanation: text("deterministicExplanation").notNull(),
-  llmSummary: text("llmSummary"),
-  llmNextStep: text("llmNextStep"),
-  caseStatus: mysqlEnum("caseStatus", ["under_review", "confirmed_fraud", "legitimate"]).default("under_review").notNull(),
-  caseNote: text("caseNote"),
-  /** Standardized reason selected when a case is resolved. */
-  resolutionReasonCode: varchar("resolutionReasonCode", { length: 64 }),
-  /** Current organization member responsible for an open case. */
-  assigneeId: varchar("assigneeId", { length: 64 }),
-  assigneeName: varchar("assigneeName", { length: 160 }),
-  casePriority: mysqlEnum("casePriority", ["critical", "high", "standard"]).default("standard").notNull(),
-  dueAt: timestamp("dueAt"),
-  isNew: boolean("isNew").default(true).notNull(),
-  createdAt: timestamp("createdAt").defaultNow().notNull(),
-  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
-}, (table) => [uniqueIndex("transactions_org_reference_unique").on(table.orgId, table.reference)]);
+export const transactions = mysqlTable(
+  "transactions",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    /** Clerk organization identifier. Nullable to preserve existing rows during migration. */
+    orgId: varchar("orgId", { length: 64 }),
+    reference: varchar("reference", { length: 32 }).notNull(),
+    amountCents: int("amountCents").notNull(),
+    merchantCategory: varchar("merchantCategory", { length: 80 }).notNull(),
+    transactionCountry: varchar("transactionCountry", { length: 3 }).notNull(),
+    accountCountry: varchar("accountCountry", { length: 3 }).notNull(),
+    deviceStatus: mysqlEnum("deviceStatus", ["known", "new"]).notNull(),
+    transactionHour: int("transactionHour").notNull(),
+    recentTransactionCount: int("recentTransactionCount").notNull(),
+    riskLabel: mysqlEnum("riskLabel", ["low", "medium", "high"]).notNull(),
+    riskProbability: int("riskProbability").notNull(),
+    factorJson: text("factorJson").notNull(),
+    deterministicExplanation: text("deterministicExplanation").notNull(),
+    llmSummary: text("llmSummary"),
+    llmNextStep: text("llmNextStep"),
+    caseStatus: mysqlEnum("caseStatus", [
+      "under_review",
+      "confirmed_fraud",
+      "legitimate",
+    ])
+      .default("under_review")
+      .notNull(),
+    caseNote: text("caseNote"),
+    /** Standardized reason selected when a case is resolved. */
+    resolutionReasonCode: varchar("resolutionReasonCode", { length: 64 }),
+    /** Current organization member responsible for an open case. */
+    assigneeId: varchar("assigneeId", { length: 64 }),
+    assigneeName: varchar("assigneeName", { length: 160 }),
+    casePriority: mysqlEnum("casePriority", ["critical", "high", "standard"])
+      .default("standard")
+      .notNull(),
+    dueAt: timestamp("dueAt"),
+    isNew: boolean("isNew").default(true).notNull(),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+  },
+  table => [
+    uniqueIndex("transactions_org_reference_unique").on(
+      table.orgId,
+      table.reference
+    ),
+  ]
+);
 
 export const caseNotes = mysqlTable("caseNotes", {
   id: int("id").autoincrement().primaryKey(),
@@ -110,61 +139,93 @@ export const notificationPreferences = mysqlTable("notificationPreferences", {
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });
 
-export const outcomeFeedback = mysqlTable("outcomeFeedback", {
-  id: int("id").autoincrement().primaryKey(),
-  /** Clerk organization identifier keeps analyst feedback inside the active workspace. */
-  orgId: varchar("orgId", { length: 64 }).notNull(),
-  transactionId: int("transactionId").notNull(),
-  /** The model decision at the time of assessment; high risk is treated as a positive prediction. */
-  predictedRiskLabel: mysqlEnum("predictedRiskLabel", ["low", "medium", "high"]).notNull(),
-  predictedProbability: int("predictedProbability").notNull(),
-  /** Human-confirmed case result, never inferred automatically. */
-  actualOutcome: mysqlEnum("actualOutcome", ["fraud", "legitimate"]).notNull(),
-  classification: mysqlEnum("classification", ["true_positive", "false_positive", "false_negative", "true_negative"]).notNull(),
-  resolutionReasonCode: varchar("resolutionReasonCode", { length: 64 }),
-  recordedById: varchar("recordedById", { length: 64 }),
-  recordedByName: varchar("recordedByName", { length: 160 }),
-  recordedAt: timestamp("recordedAt").defaultNow().notNull(),
-}, (table) => [uniqueIndex("outcome_feedback_org_transaction_unique").on(table.orgId, table.transactionId)]);
+export const outcomeFeedback = mysqlTable(
+  "outcomeFeedback",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    /** Clerk organization identifier keeps analyst feedback inside the active workspace. */
+    orgId: varchar("orgId", { length: 64 }).notNull(),
+    transactionId: int("transactionId").notNull(),
+    /** The model decision at the time of assessment; high risk is treated as a positive prediction. */
+    predictedRiskLabel: mysqlEnum("predictedRiskLabel", [
+      "low",
+      "medium",
+      "high",
+    ]).notNull(),
+    predictedProbability: int("predictedProbability").notNull(),
+    /** Human-confirmed case result, never inferred automatically. */
+    actualOutcome: mysqlEnum("actualOutcome", [
+      "fraud",
+      "legitimate",
+    ]).notNull(),
+    classification: mysqlEnum("classification", [
+      "true_positive",
+      "false_positive",
+      "false_negative",
+      "true_negative",
+    ]).notNull(),
+    resolutionReasonCode: varchar("resolutionReasonCode", { length: 64 }),
+    recordedById: varchar("recordedById", { length: 64 }),
+    recordedByName: varchar("recordedByName", { length: 160 }),
+    recordedAt: timestamp("recordedAt").defaultNow().notNull(),
+  },
+  table => [
+    uniqueIndex("outcome_feedback_org_transaction_unique").on(
+      table.orgId,
+      table.transactionId
+    ),
+  ]
+);
 
-export const apiKeys = mysqlTable("apiKeys", {
-  id: int("id").autoincrement().primaryKey(),
-  /** Clerk organization identifier; keys are never valid outside their issuing workspace. */
-  orgId: varchar("orgId", { length: 64 }).notNull(),
-  name: varchar("name", { length: 80 }).notNull(),
-  /** Non-secret lookup prefix shown in the management interface. */
-  keyPrefix: varchar("keyPrefix", { length: 24 }).notNull(),
-  /** SHA-256 digest of the full key. The plaintext secret is never persisted. */
-  keyHash: varchar("keyHash", { length: 128 }).notNull(),
-  /** JSON array retained for forward-compatible, least-privilege API scopes. */
-  scopesJson: varchar("scopesJson", { length: 255 }).notNull(),
-  createdById: varchar("createdById", { length: 64 }),
-  createdByName: varchar("createdByName", { length: 160 }),
-  lastUsedAt: timestamp("lastUsedAt"),
-  expiresAt: timestamp("expiresAt"),
-  revokedAt: timestamp("revokedAt"),
-  createdAt: timestamp("createdAt").defaultNow().notNull(),
-}, (table) => [
-  uniqueIndex("api_keys_key_hash_unique").on(table.keyHash),
-  index("api_keys_org_created_idx").on(table.orgId, table.createdAt),
-]);
+export const apiKeys = mysqlTable(
+  "apiKeys",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    /** Clerk organization identifier; keys are never valid outside their issuing workspace. */
+    orgId: varchar("orgId", { length: 64 }).notNull(),
+    name: varchar("name", { length: 80 }).notNull(),
+    /** Non-secret lookup prefix shown in the management interface. */
+    keyPrefix: varchar("keyPrefix", { length: 24 }).notNull(),
+    /** SHA-256 digest of the full key. The plaintext secret is never persisted. */
+    keyHash: varchar("keyHash", { length: 128 }).notNull(),
+    /** JSON array retained for forward-compatible, least-privilege API scopes. */
+    scopesJson: varchar("scopesJson", { length: 255 }).notNull(),
+    createdById: varchar("createdById", { length: 64 }),
+    createdByName: varchar("createdByName", { length: 160 }),
+    lastUsedAt: timestamp("lastUsedAt"),
+    expiresAt: timestamp("expiresAt"),
+    revokedAt: timestamp("revokedAt"),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+  },
+  table => [
+    uniqueIndex("api_keys_key_hash_unique").on(table.keyHash),
+    index("api_keys_org_created_idx").on(table.orgId, table.createdAt),
+  ]
+);
 
-export const apiRequestLogs = mysqlTable("apiRequestLogs", {
-  id: int("id").autoincrement().primaryKey(),
-  /** Organization and key identifier allow rate-limit and activity analysis without retaining request bodies. */
-  orgId: varchar("orgId", { length: 64 }).notNull(),
-  apiKeyId: int("apiKeyId"),
-  requestId: varchar("requestId", { length: 64 }).notNull(),
-  endpoint: varchar("endpoint", { length: 160 }).notNull(),
-  method: varchar("method", { length: 8 }).notNull(),
-  responseStatus: int("responseStatus").notNull(),
-  transactionReference: varchar("transactionReference", { length: 32 }),
-  riskLevel: mysqlEnum("riskLevel", ["low", "medium", "high"]),
-  createdAt: timestamp("createdAt").defaultNow().notNull(),
-}, (table) => [
-  index("api_request_logs_org_created_idx").on(table.orgId, table.createdAt),
-  index("api_request_logs_key_created_idx").on(table.apiKeyId, table.createdAt),
-]);
+export const apiRequestLogs = mysqlTable(
+  "apiRequestLogs",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    /** Organization and key identifier allow rate-limit and activity analysis without retaining request bodies. */
+    orgId: varchar("orgId", { length: 64 }).notNull(),
+    apiKeyId: int("apiKeyId"),
+    requestId: varchar("requestId", { length: 64 }).notNull(),
+    endpoint: varchar("endpoint", { length: 160 }).notNull(),
+    method: varchar("method", { length: 8 }).notNull(),
+    responseStatus: int("responseStatus").notNull(),
+    transactionReference: varchar("transactionReference", { length: 32 }),
+    riskLevel: mysqlEnum("riskLevel", ["low", "medium", "high"]),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+  },
+  table => [
+    index("api_request_logs_org_created_idx").on(table.orgId, table.createdAt),
+    index("api_request_logs_key_created_idx").on(
+      table.apiKeyId,
+      table.createdAt
+    ),
+  ]
+);
 
 export const weeklySummaryPreferences = mysqlTable("weeklySummaryPreferences", {
   id: int("id").autoincrement().primaryKey(),
@@ -176,18 +237,28 @@ export const weeklySummaryPreferences = mysqlTable("weeklySummaryPreferences", {
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });
 
-export const weeklySummaryDeliveries = mysqlTable("weeklySummaryDeliveries", {
-  id: int("id").autoincrement().primaryKey(),
-  /** A successful weekly report is recorded once per organization and reporting period. */
-  orgId: varchar("orgId", { length: 64 }).notNull(),
-  periodStart: timestamp("periodStart").notNull(),
-  recipient: varchar("recipient", { length: 320 }).notNull(),
-  resendEmailId: varchar("resendEmailId", { length: 128 }),
-  sentAt: timestamp("sentAt").defaultNow().notNull(),
-}, (table) => [
-  uniqueIndex("weekly_summary_deliveries_org_period_unique").on(table.orgId, table.periodStart),
-  index("weekly_summary_deliveries_org_sent_idx").on(table.orgId, table.sentAt),
-]);
+export const weeklySummaryDeliveries = mysqlTable(
+  "weeklySummaryDeliveries",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    /** A successful weekly report is recorded once per organization and reporting period. */
+    orgId: varchar("orgId", { length: 64 }).notNull(),
+    periodStart: timestamp("periodStart").notNull(),
+    recipient: varchar("recipient", { length: 320 }).notNull(),
+    resendEmailId: varchar("resendEmailId", { length: 128 }),
+    sentAt: timestamp("sentAt").defaultNow().notNull(),
+  },
+  table => [
+    uniqueIndex("weekly_summary_deliveries_org_period_unique").on(
+      table.orgId,
+      table.periodStart
+    ),
+    index("weekly_summary_deliveries_org_sent_idx").on(
+      table.orgId,
+      table.sentAt
+    ),
+  ]
+);
 
 export const modelMetricSnapshots = mysqlTable("modelMetricSnapshots", {
   id: int("id").autoincrement().primaryKey(),
@@ -221,15 +292,20 @@ export type User = typeof users.$inferSelect;
 export type InsertUser = typeof users.$inferInsert;
 export type Transaction = typeof transactions.$inferSelect;
 export type InsertTransaction = typeof transactions.$inferInsert;
-export type NotificationPreferences = typeof notificationPreferences.$inferSelect;
-export type InsertNotificationPreferences = typeof notificationPreferences.$inferInsert;
+export type NotificationPreferences =
+  typeof notificationPreferences.$inferSelect;
+export type InsertNotificationPreferences =
+  typeof notificationPreferences.$inferInsert;
 export type OutcomeFeedback = typeof outcomeFeedback.$inferSelect;
 export type InsertOutcomeFeedback = typeof outcomeFeedback.$inferInsert;
 export type ApiKey = typeof apiKeys.$inferSelect;
 export type InsertApiKey = typeof apiKeys.$inferInsert;
 export type ApiRequestLog = typeof apiRequestLogs.$inferSelect;
 export type InsertApiRequestLog = typeof apiRequestLogs.$inferInsert;
-export type WeeklySummaryPreferences = typeof weeklySummaryPreferences.$inferSelect;
-export type InsertWeeklySummaryPreferences = typeof weeklySummaryPreferences.$inferInsert;
+export type WeeklySummaryPreferences =
+  typeof weeklySummaryPreferences.$inferSelect;
+export type InsertWeeklySummaryPreferences =
+  typeof weeklySummaryPreferences.$inferInsert;
 export type WeeklySummaryDelivery = typeof weeklySummaryDeliveries.$inferSelect;
-export type InsertWeeklySummaryDelivery = typeof weeklySummaryDeliveries.$inferInsert;
+export type InsertWeeklySummaryDelivery =
+  typeof weeklySummaryDeliveries.$inferInsert;

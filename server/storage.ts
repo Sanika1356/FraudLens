@@ -26,7 +26,7 @@ function getSupabaseConfig(): SupabaseStorageConfig {
 
   if (!url || !serviceRoleKey || !bucket) {
     throw new Error(
-      "Evidence storage is not configured. Set SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, and SUPABASE_STORAGE_BUCKET.",
+      "Evidence storage is not configured. Set SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, and SUPABASE_STORAGE_BUCKET."
     );
   }
 
@@ -36,14 +36,19 @@ function getSupabaseConfig(): SupabaseStorageConfig {
 export function isSupabaseStorageConfigured(): boolean {
   return Boolean(
     ENV.supabaseUrl.trim() &&
-    ENV.supabaseServiceRoleKey.trim() &&
-    ENV.supabaseStorageBucket.trim(),
+      ENV.supabaseServiceRoleKey.trim() &&
+      ENV.supabaseStorageBucket.trim()
   );
 }
 
 function normalizeKey(relKey: string): string {
   const key = relKey.replace(/^\/+/, "").replace(/\\/g, "/");
-  if (!key || key.split("/").some((segment) => !segment || segment === "." || segment === "..")) {
+  if (
+    !key ||
+    key
+      .split("/")
+      .some(segment => !segment || segment === "." || segment === "..")
+  ) {
     throw new Error("Storage key is invalid.");
   }
   return key;
@@ -60,7 +65,10 @@ function appendHashSuffix(relKey: string): string {
   return `${relKey.slice(0, lastDot)}_${hash}${relKey.slice(lastDot)}`;
 }
 
-function headers(config: SupabaseStorageConfig, contentType?: string): HeadersInit {
+function headers(
+  config: SupabaseStorageConfig,
+  contentType?: string
+): HeadersInit {
   return {
     apikey: config.serviceRoleKey,
     Authorization: `Bearer ${config.serviceRoleKey}`,
@@ -68,29 +76,42 @@ function headers(config: SupabaseStorageConfig, contentType?: string): HeadersIn
   };
 }
 
-async function storageError(response: Response, operation: string): Promise<Error> {
+async function storageError(
+  response: Response,
+  operation: string
+): Promise<Error> {
   const detail = await response.text().catch(() => "");
-  return new Error(`Supabase Storage ${operation} failed (${response.status})${detail ? `: ${detail}` : ""}`);
+  return new Error(
+    `Supabase Storage ${operation} failed (${response.status})${detail ? `: ${detail}` : ""}`
+  );
 }
 
-export function createEvidenceStorageKey(orgId: string, transactionId: number, fileName: string): string {
-  const safeName = fileName
-    .trim()
-    .replace(/[^a-zA-Z0-9._-]+/g, "-")
-    .replace(/^-+|-+$/g, "")
-    .slice(0, 120) || "evidence";
+export function createEvidenceStorageKey(
+  orgId: string,
+  transactionId: number,
+  fileName: string
+): string {
+  const safeName =
+    fileName
+      .trim()
+      .replace(/[^a-zA-Z0-9._-]+/g, "-")
+      .replace(/^-+|-+$/g, "")
+      .slice(0, 120) || "evidence";
   return `evidence/${encodeURIComponent(orgId)}/${transactionId}/${safeName}`;
 }
 
 export async function storagePut(
   relKey: string,
   data: StorageData,
-  contentType = "application/octet-stream",
+  contentType = "application/octet-stream"
 ): Promise<{ key: string; url: string }> {
   const config = getSupabaseConfig();
   const key = appendHashSuffix(normalizeKey(relKey));
   const uploadUrl = `${config.url}/storage/v1/object/${encodeURIComponent(config.bucket)}/${encodeObjectPath(key)}`;
-  const body = typeof data === "string" ? data : new Blob([Uint8Array.from(data).buffer], { type: contentType });
+  const body =
+    typeof data === "string"
+      ? data
+      : new Blob([Uint8Array.from(data).buffer], { type: contentType });
   const response = await fetch(uploadUrl, {
     method: "POST",
     headers: { ...headers(config, contentType), "x-upsert": "false" },
@@ -101,7 +122,10 @@ export async function storagePut(
   return { key, url: `/storage/${encodeObjectPath(key)}` };
 }
 
-export async function storageGetSignedUrl(relKey: string, expiresInSeconds = 60): Promise<string> {
+export async function storageGetSignedUrl(
+  relKey: string,
+  expiresInSeconds = 60
+): Promise<string> {
   const config = getSupabaseConfig();
   const key = normalizeKey(relKey);
   const expiry = Math.min(Math.max(Math.floor(expiresInSeconds), 10), 300);
@@ -111,28 +135,37 @@ export async function storageGetSignedUrl(relKey: string, expiresInSeconds = 60)
       method: "POST",
       headers: headers(config, "application/json"),
       body: JSON.stringify({ expiresIn: expiry }),
-    },
+    }
   );
 
   if (!response.ok) throw await storageError(response, "signed URL creation");
-  const result = (await response.json()) as { signedURL?: string; signedUrl?: string };
+  const result = (await response.json()) as {
+    signedURL?: string;
+    signedUrl?: string;
+  };
   const signedUrl = result.signedURL ?? result.signedUrl;
-  if (!signedUrl) throw new Error("Supabase Storage returned an empty signed URL.");
+  if (!signedUrl)
+    throw new Error("Supabase Storage returned an empty signed URL.");
   return signedUrl.startsWith("http") ? signedUrl : `${config.url}${signedUrl}`;
 }
 
 export async function storageDelete(relKey: string): Promise<void> {
   const config = getSupabaseConfig();
   const key = normalizeKey(relKey);
-  const response = await fetch(`${config.url}/storage/v1/object/${encodeURIComponent(config.bucket)}`, {
-    method: "DELETE",
-    headers: headers(config, "application/json"),
-    body: JSON.stringify({ prefixes: [key] }),
-  });
+  const response = await fetch(
+    `${config.url}/storage/v1/object/${encodeURIComponent(config.bucket)}`,
+    {
+      method: "DELETE",
+      headers: headers(config, "application/json"),
+      body: JSON.stringify({ prefixes: [key] }),
+    }
+  );
   if (!response.ok) throw await storageError(response, "deletion");
 }
 
-export async function storageGet(relKey: string): Promise<{ key: string; url: string }> {
+export async function storageGet(
+  relKey: string
+): Promise<{ key: string; url: string }> {
   const key = normalizeKey(relKey);
   return { key, url: `/storage/${encodeObjectPath(key)}` };
 }

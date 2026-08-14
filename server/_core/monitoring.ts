@@ -18,7 +18,8 @@ export const isServerMonitoringEnabled = Boolean(sentryDsn);
 if (isServerMonitoringEnabled) {
   Sentry.init({
     dsn: sentryDsn,
-    environment: process.env.SENTRY_ENVIRONMENT ?? process.env.NODE_ENV ?? "development",
+    environment:
+      process.env.SENTRY_ENVIRONMENT ?? process.env.NODE_ENV ?? "development",
     release: process.env.SENTRY_RELEASE,
     tracesSampleRate: parseSampleRate(process.env.SENTRY_TRACES_SAMPLE_RATE),
     enableLogs: true,
@@ -32,7 +33,9 @@ if (isServerMonitoringEnabled) {
 /** Records only scrubbed application metadata; user, request, and payload data are never attached. */
 export function captureServerException(
   error: unknown,
-  context: { area: string; operation?: string; requestId?: string } = { area: "server" },
+  context: { area: string; operation?: string; requestId?: string } = {
+    area: "server",
+  }
 ): void {
   if (!isServerMonitoringEnabled) return;
 
@@ -44,7 +47,10 @@ export function captureServerException(
   });
 }
 
-export function logServerError(message: string, attributes: Record<string, unknown> = {}): void {
+export function logServerError(
+  message: string,
+  attributes: Record<string, unknown> = {}
+): void {
   if (!isServerMonitoringEnabled) return;
   Sentry.logger.error(message, sanitizeLogAttributes(attributes));
 }

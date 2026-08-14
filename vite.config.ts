@@ -12,7 +12,9 @@ export default defineConfig(({ mode }) => {
   const sentryAuthToken = env.SENTRY_AUTH_TOKEN;
   const sentryOrg = env.SENTRY_ORG;
   const sentryProject = env.SENTRY_PROJECT;
-  const shouldUploadSourceMaps = Boolean(sentryAuthToken && sentryOrg && sentryProject);
+  const shouldUploadSourceMaps = Boolean(
+    sentryAuthToken && sentryOrg && sentryProject
+  );
 
   const plugins = [react(), tailwindcss(), jsxLocPlugin()];
   if (shouldUploadSourceMaps) {
@@ -28,7 +30,7 @@ export default defineConfig(({ mode }) => {
           filesToDeleteAfterUpload: ["./dist/public/**/*.map"],
         },
         telemetry: false,
-      }),
+      })
     );
   }
 

@@ -31,7 +31,7 @@ function createSessionUser(openId: string): User {
 }
 
 export async function createContext(
-  opts: CreateExpressContextOptions,
+  opts: CreateExpressContextOptions
 ): Promise<TrpcContext> {
   const auth = getAuth(opts.req as ExpressRequestWithAuth);
   let user: User | null = null;
@@ -48,8 +48,14 @@ export async function createContext(
         user = (await getUserByOpenId(auth.userId)) ?? null;
       }
     } catch (error) {
-      console.error("Unable to synchronize the authenticated FraudLens user.", error);
-      captureServerException(error, { area: "authentication", operation: "synchronize_user" });
+      console.error(
+        "Unable to synchronize the authenticated FraudLens user.",
+        error
+      );
+      captureServerException(error, {
+        area: "authentication",
+        operation: "synchronize_user",
+      });
       logServerError("Unable to synchronize the authenticated FraudLens user", {
         area: "authentication",
         operation: "synchronize_user",

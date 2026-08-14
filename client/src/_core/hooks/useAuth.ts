@@ -1,4 +1,9 @@
-import { useAuth as useClerkAuth, useClerk, useOrganization, useUser } from "@clerk/react";
+import {
+  useAuth as useClerkAuth,
+  useClerk,
+  useOrganization,
+  useUser,
+} from "@clerk/react";
 import { trpc } from "@/lib/trpc";
 
 export type FraudLensRole = "analyst" | "manager" | "admin";
@@ -18,9 +23,15 @@ export type FraudLensUser = {
 export function useAuth() {
   const { isLoaded: authLoaded, isSignedIn } = useClerkAuth();
   const { isLoaded: userLoaded, user: clerkUser } = useUser();
-  const { isLoaded: organizationLoaded, organization, membership } = useOrganization();
+  const {
+    isLoaded: organizationLoaded,
+    organization,
+    membership,
+  } = useOrganization();
   const { signOut } = useClerk();
-  const profile = trpc.auth.me.useQuery(undefined, { enabled: Boolean(isSignedIn) });
+  const profile = trpc.auth.me.useQuery(undefined, {
+    enabled: Boolean(isSignedIn),
+  });
 
   const user: FraudLensUser | null = clerkUser
     ? {
@@ -34,14 +45,20 @@ export function useAuth() {
 
   return {
     user,
-    organization: organization ? {
-      id: organization.id,
-      name: organization.name,
-      slug: organization.slug,
-      imageUrl: organization.imageUrl,
-    } : null,
+    organization: organization
+      ? {
+          id: organization.id,
+          name: organization.name,
+          slug: organization.slug,
+          imageUrl: organization.imageUrl,
+        }
+      : null,
     orgRole: membership?.role ?? null,
-    loading: !authLoaded || !userLoaded || !organizationLoaded || (Boolean(isSignedIn) && profile.isLoading),
+    loading:
+      !authLoaded ||
+      !userLoaded ||
+      !organizationLoaded ||
+      (Boolean(isSignedIn) && profile.isLoading),
     error: profile.error,
     isAuthenticated: Boolean(isSignedIn),
     refresh: async () => {

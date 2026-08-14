@@ -2,7 +2,12 @@ import "./monitoring";
 import * as Sentry from "@sentry/react";
 import { ClerkProvider, useAuth } from "@clerk/react";
 import { trpc } from "@/lib/trpc";
-import { MutationCache, QueryCache, QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import {
+  MutationCache,
+  QueryCache,
+  QueryClient,
+  QueryClientProvider,
+} from "@tanstack/react-query";
 import { httpBatchLink } from "@trpc/client";
 import { createRoot } from "react-dom/client";
 import { useMemo } from "react";
@@ -49,7 +54,7 @@ function AuthenticatedTrpcApp() {
           }),
         ],
       }),
-    [getToken],
+    [getToken]
   );
 
   return (
@@ -66,7 +71,11 @@ createRoot(document.getElementById("root")!, {
   onCaughtError: Sentry.reactErrorHandler(),
   onRecoverableError: Sentry.reactErrorHandler(),
 }).render(
-  <ClerkProvider publishableKey={publishableKey} signInUrl="/sign-in" signUpUrl="/sign-up">
+  <ClerkProvider
+    publishableKey={publishableKey}
+    signInUrl="/sign-in"
+    signUpUrl="/sign-up"
+  >
     <AuthenticatedTrpcApp />
-  </ClerkProvider>,
+  </ClerkProvider>
 );

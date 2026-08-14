@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { sanitizeLogAttributes, sanitizeMonitoringEvent } from "../shared/monitoringPrivacy";
+import {
+  sanitizeLogAttributes,
+  sanitizeMonitoringEvent,
+} from "../shared/monitoringPrivacy";
 
 describe("monitoring privacy filters", () => {
   it("removes request identity and arbitrary diagnostic payloads from events", () => {
@@ -16,7 +19,9 @@ describe("monitoring privacy filters", () => {
     expect(event.request).toBeUndefined();
     expect(event.extra).toBeUndefined();
     expect(event.breadcrumbs).toBeUndefined();
-    expect(event.message).toBe("Failed for [redacted-email] with Bearer [redacted]");
+    expect(event.message).toBe(
+      "Failed for [redacted-email] with Bearer [redacted]"
+    );
     expect(event.tags).toEqual({ area: "public_api" });
   });
 
@@ -33,7 +38,8 @@ describe("monitoring privacy filters", () => {
       authorization: "[redacted]",
       nested: {
         apiKey: "[redacted]",
-        destination: "https://example.test/path?customer=[redacted]&token=[redacted]",
+        destination:
+          "https://example.test/path?customer=[redacted]&token=[redacted]",
       },
     });
   });

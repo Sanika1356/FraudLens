@@ -24,11 +24,16 @@ function roleProcedure(...allowedRoles: FraudLensRole[]) {
       const { ctx, next } = opts;
 
       if (!ctx.user) {
-        throw new TRPCError({ code: "UNAUTHORIZED", message: UNAUTHED_ERR_MSG });
+        throw new TRPCError({
+          code: "UNAUTHORIZED",
+          message: UNAUTHED_ERR_MSG,
+        });
       }
 
       if (!allowedRoles.includes(ctx.user.role)) {
-        const requirement = allowedRoles.map(role => ROLE_LABELS[role]).join(" or ");
+        const requirement = allowedRoles
+          .map(role => ROLE_LABELS[role])
+          .join(" or ");
         throw new TRPCError({
           code: "FORBIDDEN",
           message: `This action requires ${requirement}.`,
@@ -41,7 +46,7 @@ function roleProcedure(...allowedRoles: FraudLensRole[]) {
           user: ctx.user,
         },
       });
-    }),
+    })
   );
 }
 
@@ -66,24 +71,31 @@ const activeOrganizationMiddleware = t.middleware(async ({ ctx, next }) => {
 });
 
 /** Requires a signed-in FraudLens user with an active Clerk organization. */
-export const organizationProcedure = analystProcedure.use(activeOrganizationMiddleware);
+export const organizationProcedure = analystProcedure.use(
+  activeOrganizationMiddleware
+);
 
 /** Requires a manager or administrator in an active Clerk organization. */
-export const organizationManagerProcedure = managerProcedure.use(activeOrganizationMiddleware);
+export const organizationManagerProcedure = managerProcedure.use(
+  activeOrganizationMiddleware
+);
 
 /** Requires both a FraudLens administrator and Clerk organization administrator membership. */
 export const organizationAdministratorProcedure = adminProcedure
   .use(activeOrganizationMiddleware)
-  .use(t.middleware(async ({ ctx, next }) => {
-    if (ctx.orgRole !== "org:admin") {
-      throw new TRPCError({
-        code: "FORBIDDEN",
-        message: "This action requires administrator membership in the active organization.",
-      });
-    }
+  .use(
+    t.middleware(async ({ ctx, next }) => {
+      if (ctx.orgRole !== "org:admin") {
+        throw new TRPCError({
+          code: "FORBIDDEN",
+          message:
+            "This action requires administrator membership in the active organization.",
+        });
+      }
 
-    return next({ ctx });
-  }));
+      return next({ ctx });
+    })
+  );
 
 // Backward-compatible shorthand for any signed-in FraudLens user.
 export const protectedProcedure = analystProcedure;

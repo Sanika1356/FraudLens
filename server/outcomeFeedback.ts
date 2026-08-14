@@ -1,7 +1,12 @@
 import type { RiskLevel } from "./riskEngine";
 
 export const ACTUAL_OUTCOMES = ["fraud", "legitimate"] as const;
-export const OUTCOME_CLASSIFICATIONS = ["true_positive", "false_positive", "false_negative", "true_negative"] as const;
+export const OUTCOME_CLASSIFICATIONS = [
+  "true_positive",
+  "false_positive",
+  "false_negative",
+  "true_negative",
+] as const;
 
 export type ActualOutcome = (typeof ACTUAL_OUTCOMES)[number];
 export type OutcomeClassification = (typeof OUTCOME_CLASSIFICATIONS)[number];
@@ -13,7 +18,10 @@ export type OutcomeFeedbackMetric = {
   recordedAt: Date;
 };
 
-export function classifyOutcome(predictedRiskLabel: RiskLevel, actualOutcome: ActualOutcome): OutcomeClassification {
+export function classifyOutcome(
+  predictedRiskLabel: RiskLevel,
+  actualOutcome: ActualOutcome
+): OutcomeClassification {
   const predictedFraud = predictedRiskLabel === "high";
   if (predictedFraud && actualOutcome === "fraud") return "true_positive";
   if (predictedFraud && actualOutcome === "legitimate") return "false_positive";
@@ -22,7 +30,9 @@ export function classifyOutcome(predictedRiskLabel: RiskLevel, actualOutcome: Ac
 }
 
 function ratioMilli(numerator: number, denominator: number) {
-  return denominator === 0 ? null : Math.round((numerator / denominator) * 1000);
+  return denominator === 0
+    ? null
+    : Math.round((numerator / denominator) * 1000);
 }
 
 function percentageMilli(numerator: number, denominator: number) {
@@ -51,12 +61,26 @@ export function buildModelQualityReport(feedback: OutcomeFeedbackMetric[]) {
   const reviewed = feedback.length;
   const confirmedFraud = counts.truePositive + counts.falseNegative;
   const legitimate = counts.falsePositive + counts.trueNegative;
-  const precisionMilli = ratioMilli(counts.truePositive, counts.truePositive + counts.falsePositive);
-  const recallMilli = ratioMilli(counts.truePositive, counts.truePositive + counts.falseNegative);
-  const f1Milli = precisionMilli === null || recallMilli === null || precisionMilli + recallMilli === 0
-    ? null
-    : Math.round((2 * precisionMilli * recallMilli) / (precisionMilli + recallMilli));
-  const accuracyMilli = percentageMilli(counts.truePositive + counts.trueNegative, reviewed);
+  const precisionMilli = ratioMilli(
+    counts.truePositive,
+    counts.truePositive + counts.falsePositive
+  );
+  const recallMilli = ratioMilli(
+    counts.truePositive,
+    counts.truePositive + counts.falseNegative
+  );
+  const f1Milli =
+    precisionMilli === null ||
+    recallMilli === null ||
+    precisionMilli + recallMilli === 0
+      ? null
+      : Math.round(
+          (2 * precisionMilli * recallMilli) / (precisionMilli + recallMilli)
+        );
+  const accuracyMilli = percentageMilli(
+    counts.truePositive + counts.trueNegative,
+    reviewed
+  );
 
   const trendByDay = new Map<string, OutcomeFeedbackMetric[]>();
   for (const outcome of feedback) {
@@ -68,10 +92,18 @@ export function buildModelQualityReport(feedback: OutcomeFeedbackMetric[]) {
 
   const trend = Array.from(trendByDay.entries())
     .map(([day, values]) => {
-      const dayCounts = values.reduce((result, value) => {
-        result[value.classification] += 1;
-        return result;
-      }, { true_positive: 0, false_positive: 0, false_negative: 0, true_negative: 0 });
+      const dayCounts = values.reduce(
+        (result, value) => {
+          result[value.classification] += 1;
+          return result;
+        },
+        {
+          true_positive: 0,
+          false_positive: 0,
+          false_negative: 0,
+          true_negative: 0,
+        }
+      );
       const dayReviewed = values.length;
       return {
         day,
@@ -80,7 +112,10 @@ export function buildModelQualityReport(feedback: OutcomeFeedbackMetric[]) {
         legitimate: dayCounts.false_positive + dayCounts.true_negative,
         falsePositive: dayCounts.false_positive,
         falseNegative: dayCounts.false_negative,
-        accuracyMilli: percentageMilli(dayCounts.true_positive + dayCounts.true_negative, dayReviewed),
+        accuracyMilli: percentageMilli(
+          dayCounts.true_positive + dayCounts.true_negative,
+          dayReviewed
+        ),
       };
     })
     .sort((first, second) => first.day.localeCompare(second.day))

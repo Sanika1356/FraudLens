@@ -1,6 +1,21 @@
 import { and, count, desc, eq, gte } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
-import { apiKeys, apiRequestLogs, auditEvents, caseEvidence, caseNotes, caseTags, InsertUser, InsertTransaction, notificationPreferences, outcomeFeedback, transactions, users, weeklySummaryDeliveries, weeklySummaryPreferences } from "../drizzle/schema";
+import {
+  apiKeys,
+  apiRequestLogs,
+  auditEvents,
+  caseEvidence,
+  caseNotes,
+  caseTags,
+  InsertUser,
+  InsertTransaction,
+  notificationPreferences,
+  outcomeFeedback,
+  transactions,
+  users,
+  weeklySummaryDeliveries,
+  weeklySummaryPreferences,
+} from "../drizzle/schema";
 import type { ActualOutcome, OutcomeClassification } from "./outcomeFeedback";
 import { ENV } from "./_core/env";
 
@@ -38,8 +53,17 @@ export type CaseCommentInput = {
   authorName: string;
 };
 
-export type CaseCommentRecord = CaseCommentInput & { id: number; createdAt: Date };
-export type CaseTagRecord = { id: number; orgId: string | null; transactionId: number; tag: string; createdAt: Date };
+export type CaseCommentRecord = CaseCommentInput & {
+  id: number;
+  createdAt: Date;
+};
+export type CaseTagRecord = {
+  id: number;
+  orgId: string | null;
+  transactionId: number;
+  tag: string;
+  createdAt: Date;
+};
 export type CaseEvidenceInput = {
   orgId: string;
   transactionId: number;
@@ -52,7 +76,10 @@ export type CaseEvidenceInput = {
   addedById: string | null;
   addedByName: string | null;
 };
-export type CaseEvidenceRecord = CaseEvidenceInput & { id: number; createdAt: Date };
+export type CaseEvidenceRecord = CaseEvidenceInput & {
+  id: number;
+  createdAt: Date;
+};
 
 export type NotificationPreferencesInput = {
   emailEnabled: boolean;
@@ -115,7 +142,10 @@ export type ApiRequestLogInput = {
   transactionReference?: string | null;
   riskLevel?: "low" | "medium" | "high" | null;
 };
-export type ApiRequestLogRecord = ApiRequestLogInput & { id: number; createdAt: Date };
+export type ApiRequestLogRecord = ApiRequestLogInput & {
+  id: number;
+  createdAt: Date;
+};
 
 export type WeeklySummaryPreferencesInput = {
   enabled: boolean;
@@ -140,10 +170,11 @@ export type WeeklySummaryDeliveryRecord = WeeklySummaryDeliveryInput & {
   sentAt: Date;
 };
 
-export const DEFAULT_WEEKLY_SUMMARY_PREFERENCES: WeeklySummaryPreferencesInput = {
-  enabled: false,
-  toEmail: null,
-};
+export const DEFAULT_WEEKLY_SUMMARY_PREFERENCES: WeeklySummaryPreferencesInput =
+  {
+    enabled: false,
+    toEmail: null,
+  };
 
 export const DEFAULT_NOTIFICATION_PREFERENCES: NotificationPreferencesInput = {
   emailEnabled: false,
@@ -159,11 +190,17 @@ const inMemoryAuditEvents = new Map<string, AuditEventRecord[]>();
 const inMemoryComments = new Map<string, CaseCommentRecord[]>();
 const inMemoryTags = new Map<string, CaseTagRecord[]>();
 const inMemoryEvidence = new Map<string, CaseEvidenceRecord[]>();
-const inMemoryNotificationPreferences = new Map<string, NotificationPreferencesRecord>();
+const inMemoryNotificationPreferences = new Map<
+  string,
+  NotificationPreferencesRecord
+>();
 const inMemoryOutcomeFeedback = new Map<string, OutcomeFeedbackRecord>();
 const inMemoryApiKeys = new Map<number, ApiKeyRecord>();
 const inMemoryApiRequestLogs: ApiRequestLogRecord[] = [];
-const inMemoryWeeklySummaryPreferences = new Map<string, WeeklySummaryPreferencesRecord>();
+const inMemoryWeeklySummaryPreferences = new Map<
+  string,
+  WeeklySummaryPreferencesRecord
+>();
 const inMemoryWeeklySummaryDeliveries: WeeklySummaryDeliveryRecord[] = [];
 let inMemoryCaseArtifactId = 1;
 let inMemoryApiKeyId = 1;
@@ -185,67 +222,91 @@ export async function upsertUser(user: InsertUser): Promise<void> {
   if (!user.openId) throw new Error("User openId is required for upsert");
   const db = await getDb();
   if (!db) return;
-  const values: InsertUser = { ...user, lastSignedIn: user.lastSignedIn ?? new Date() };
+  const values: InsertUser = {
+    ...user,
+    lastSignedIn: user.lastSignedIn ?? new Date(),
+  };
   if (user.openId === ENV.ownerOpenId) values.role = "admin";
-  await db.insert(users).values(values).onDuplicateKeyUpdate({
-    set: {
-      name: values.name,
-      email: values.email,
-      loginMethod: values.loginMethod,
-      lastSignedIn: new Date(),
-    },
-  });
+  await db
+    .insert(users)
+    .values(values)
+    .onDuplicateKeyUpdate({
+      set: {
+        name: values.name,
+        email: values.email,
+        loginMethod: values.loginMethod,
+        lastSignedIn: new Date(),
+      },
+    });
 }
 
 export async function getUserByOpenId(openId: string) {
   const db = await getDb();
   if (!db) return undefined;
-  const result = await db.select().from(users).where(eq(users.openId, openId)).limit(1);
+  const result = await db
+    .select()
+    .from(users)
+    .where(eq(users.openId, openId))
+    .limit(1);
   return result[0];
 }
 
 export async function getTransactionsByOrganization(orgId: string) {
   const db = await getDb();
   if (!db) return [];
-  return db.select().from(transactions)
+  return db
+    .select()
+    .from(transactions)
     .where(eq(transactions.orgId, orgId))
     .orderBy(desc(transactions.createdAt));
 }
 
-export async function getTransactionReferencesByOrganization(orgId: string): Promise<Set<string>> {
+export async function getTransactionReferencesByOrganization(
+  orgId: string
+): Promise<Set<string>> {
   const db = await getDb();
   if (!db) return new Set();
-  const rows = await db.select({ reference: transactions.reference }).from(transactions)
+  const rows = await db
+    .select({ reference: transactions.reference })
+    .from(transactions)
     .where(eq(transactions.orgId, orgId));
-  return new Set(rows.map((row) => row.reference.trim().toUpperCase()));
+  return new Set(rows.map(row => row.reference.trim().toUpperCase()));
 }
 
-export async function getNotificationPreferences(orgId: string): Promise<NotificationPreferencesRecord> {
+export async function getNotificationPreferences(
+  orgId: string
+): Promise<NotificationPreferencesRecord> {
   const db = await getDb();
   if (!db) {
-    return inMemoryNotificationPreferences.get(orgId) ?? {
+    return (
+      inMemoryNotificationPreferences.get(orgId) ?? {
+        id: 0,
+        orgId,
+        ...DEFAULT_NOTIFICATION_PREFERENCES,
+        updatedAt: new Date(),
+      }
+    );
+  }
+
+  const rows = await db
+    .select()
+    .from(notificationPreferences)
+    .where(eq(notificationPreferences.orgId, orgId))
+    .limit(1);
+  const preferences = rows[0];
+  return (
+    preferences ?? {
       id: 0,
       orgId,
       ...DEFAULT_NOTIFICATION_PREFERENCES,
       updatedAt: new Date(),
-    };
-  }
-
-  const rows = await db.select().from(notificationPreferences)
-    .where(eq(notificationPreferences.orgId, orgId))
-    .limit(1);
-  const preferences = rows[0];
-  return preferences ?? {
-    id: 0,
-    orgId,
-    ...DEFAULT_NOTIFICATION_PREFERENCES,
-    updatedAt: new Date(),
-  };
+    }
+  );
 }
 
 export async function upsertNotificationPreferences(
   orgId: string,
-  preferences: NotificationPreferencesInput,
+  preferences: NotificationPreferencesInput
 ): Promise<NotificationPreferencesRecord> {
   const db = await getDb();
   if (!db) {
@@ -260,23 +321,33 @@ export async function upsertNotificationPreferences(
     return saved;
   }
 
-  await db.insert(notificationPreferences).values({ orgId, ...preferences }).onDuplicateKeyUpdate({
-    set: { ...preferences, updatedAt: new Date() },
-  });
+  await db
+    .insert(notificationPreferences)
+    .values({ orgId, ...preferences })
+    .onDuplicateKeyUpdate({
+      set: { ...preferences, updatedAt: new Date() },
+    });
   return getNotificationPreferences(orgId);
 }
 
-export async function getOutcomeFeedbackByOrganization(orgId: string): Promise<OutcomeFeedbackRecord[]> {
+export async function getOutcomeFeedbackByOrganization(
+  orgId: string
+): Promise<OutcomeFeedbackRecord[]> {
   const db = await getDb();
   if (!db) {
     return Array.from(inMemoryOutcomeFeedback.values())
-      .filter((feedback) => feedback.orgId === orgId)
-      .sort((first, second) => first.recordedAt.getTime() - second.recordedAt.getTime());
+      .filter(feedback => feedback.orgId === orgId)
+      .sort(
+        (first, second) =>
+          first.recordedAt.getTime() - second.recordedAt.getTime()
+      );
   }
-  const rows = await db.select().from(outcomeFeedback)
+  const rows = await db
+    .select()
+    .from(outcomeFeedback)
     .where(eq(outcomeFeedback.orgId, orgId))
     .orderBy(outcomeFeedback.recordedAt);
-  return rows.map((row) => ({
+  return rows.map(row => ({
     ...row,
     orgId: row.orgId,
     resolutionReasonCode: row.resolutionReasonCode ?? null,
@@ -285,7 +356,9 @@ export async function getOutcomeFeedbackByOrganization(orgId: string): Promise<O
   }));
 }
 
-export async function upsertOutcomeFeedback(input: OutcomeFeedbackInput): Promise<OutcomeFeedbackRecord> {
+export async function upsertOutcomeFeedback(
+  input: OutcomeFeedbackInput
+): Promise<OutcomeFeedbackRecord> {
   const key = caseKey(input.orgId, input.transactionId);
   const db = await getDb();
   if (!db) {
@@ -298,20 +371,30 @@ export async function upsertOutcomeFeedback(input: OutcomeFeedbackInput): Promis
     return saved;
   }
 
-  await db.insert(outcomeFeedback).values(input).onDuplicateKeyUpdate({
-    set: {
-      predictedRiskLabel: input.predictedRiskLabel,
-      predictedProbability: input.predictedProbability,
-      actualOutcome: input.actualOutcome,
-      classification: input.classification,
-      resolutionReasonCode: input.resolutionReasonCode,
-      recordedById: input.recordedById,
-      recordedByName: input.recordedByName,
-      recordedAt: new Date(),
-    },
-  });
-  const rows = await db.select().from(outcomeFeedback)
-    .where(and(eq(outcomeFeedback.orgId, input.orgId), eq(outcomeFeedback.transactionId, input.transactionId)))
+  await db
+    .insert(outcomeFeedback)
+    .values(input)
+    .onDuplicateKeyUpdate({
+      set: {
+        predictedRiskLabel: input.predictedRiskLabel,
+        predictedProbability: input.predictedProbability,
+        actualOutcome: input.actualOutcome,
+        classification: input.classification,
+        resolutionReasonCode: input.resolutionReasonCode,
+        recordedById: input.recordedById,
+        recordedByName: input.recordedByName,
+        recordedAt: new Date(),
+      },
+    });
+  const rows = await db
+    .select()
+    .from(outcomeFeedback)
+    .where(
+      and(
+        eq(outcomeFeedback.orgId, input.orgId),
+        eq(outcomeFeedback.transactionId, input.transactionId)
+      )
+    )
     .limit(1);
   const saved = rows[0];
   if (!saved) throw new Error("Outcome feedback could not be saved.");
@@ -324,13 +407,23 @@ export async function upsertOutcomeFeedback(input: OutcomeFeedbackInput): Promis
   };
 }
 
-export async function deleteOutcomeFeedback(orgId: string, transactionId: number): Promise<void> {
+export async function deleteOutcomeFeedback(
+  orgId: string,
+  transactionId: number
+): Promise<void> {
   const db = await getDb();
   if (!db) {
     inMemoryOutcomeFeedback.delete(caseKey(orgId, transactionId));
     return;
   }
-  await db.delete(outcomeFeedback).where(and(eq(outcomeFeedback.orgId, orgId), eq(outcomeFeedback.transactionId, transactionId)));
+  await db
+    .delete(outcomeFeedback)
+    .where(
+      and(
+        eq(outcomeFeedback.orgId, orgId),
+        eq(outcomeFeedback.transactionId, transactionId)
+      )
+    );
 }
 
 export async function createApiKey(input: ApiKeyInput): Promise<ApiKeyRecord> {
@@ -350,30 +443,55 @@ export async function createApiKey(input: ApiKeyInput): Promise<ApiKeyRecord> {
   }
 
   await db.insert(apiKeys).values({ ...input, scopesJson });
-  const rows = await db.select().from(apiKeys).where(eq(apiKeys.keyHash, input.keyHash)).limit(1);
+  const rows = await db
+    .select()
+    .from(apiKeys)
+    .where(eq(apiKeys.keyHash, input.keyHash))
+    .limit(1);
   const saved = rows[0];
   if (!saved) throw new Error("API key could not be saved.");
   return saved;
 }
 
-export async function getApiKeysByOrganization(orgId: string): Promise<ApiKeyRecord[]> {
+export async function getApiKeysByOrganization(
+  orgId: string
+): Promise<ApiKeyRecord[]> {
   const db = await getDb();
   if (!db) {
     return Array.from(inMemoryApiKeys.values())
-      .filter((key) => key.orgId === orgId)
-      .sort((first, second) => second.createdAt.getTime() - first.createdAt.getTime());
+      .filter(key => key.orgId === orgId)
+      .sort(
+        (first, second) =>
+          second.createdAt.getTime() - first.createdAt.getTime()
+      );
   }
-  return db.select().from(apiKeys).where(eq(apiKeys.orgId, orgId)).orderBy(desc(apiKeys.createdAt));
+  return db
+    .select()
+    .from(apiKeys)
+    .where(eq(apiKeys.orgId, orgId))
+    .orderBy(desc(apiKeys.createdAt));
 }
 
-export async function getApiKeyByHash(keyHash: string): Promise<ApiKeyRecord | undefined> {
+export async function getApiKeyByHash(
+  keyHash: string
+): Promise<ApiKeyRecord | undefined> {
   const db = await getDb();
-  if (!db) return Array.from(inMemoryApiKeys.values()).find((key) => key.keyHash === keyHash);
-  const rows = await db.select().from(apiKeys).where(eq(apiKeys.keyHash, keyHash)).limit(1);
+  if (!db)
+    return Array.from(inMemoryApiKeys.values()).find(
+      key => key.keyHash === keyHash
+    );
+  const rows = await db
+    .select()
+    .from(apiKeys)
+    .where(eq(apiKeys.keyHash, keyHash))
+    .limit(1);
   return rows[0];
 }
 
-export async function revokeApiKey(orgId: string, keyId: number): Promise<ApiKeyRecord | undefined> {
+export async function revokeApiKey(
+  orgId: string,
+  keyId: number
+): Promise<ApiKeyRecord | undefined> {
   const db = await getDb();
   if (!db) {
     const current = inMemoryApiKeys.get(keyId);
@@ -382,8 +500,15 @@ export async function revokeApiKey(orgId: string, keyId: number): Promise<ApiKey
     inMemoryApiKeys.set(keyId, revoked);
     return revoked;
   }
-  await db.update(apiKeys).set({ revokedAt: new Date() }).where(and(eq(apiKeys.id, keyId), eq(apiKeys.orgId, orgId)));
-  const rows = await db.select().from(apiKeys).where(and(eq(apiKeys.id, keyId), eq(apiKeys.orgId, orgId))).limit(1);
+  await db
+    .update(apiKeys)
+    .set({ revokedAt: new Date() })
+    .where(and(eq(apiKeys.id, keyId), eq(apiKeys.orgId, orgId)));
+  const rows = await db
+    .select()
+    .from(apiKeys)
+    .where(and(eq(apiKeys.id, keyId), eq(apiKeys.orgId, orgId)))
+    .limit(1);
   return rows[0];
 }
 
@@ -391,13 +516,19 @@ export async function touchApiKeyLastUsed(keyId: number): Promise<void> {
   const db = await getDb();
   if (!db) {
     const current = inMemoryApiKeys.get(keyId);
-    if (current) inMemoryApiKeys.set(keyId, { ...current, lastUsedAt: new Date() });
+    if (current)
+      inMemoryApiKeys.set(keyId, { ...current, lastUsedAt: new Date() });
     return;
   }
-  await db.update(apiKeys).set({ lastUsedAt: new Date() }).where(eq(apiKeys.id, keyId));
+  await db
+    .update(apiKeys)
+    .set({ lastUsedAt: new Date() })
+    .where(eq(apiKeys.id, keyId));
 }
 
-export async function recordApiRequestLog(input: ApiRequestLogInput): Promise<void> {
+export async function recordApiRequestLog(
+  input: ApiRequestLogInput
+): Promise<void> {
   const db = await getDb();
   if (!db) {
     inMemoryApiRequestLogs.push({
@@ -416,45 +547,78 @@ export async function recordApiRequestLog(input: ApiRequestLogInput): Promise<vo
   });
 }
 
-export async function countApiRequestsSince(apiKeyId: number, since: Date): Promise<number> {
+export async function countApiRequestsSince(
+  apiKeyId: number,
+  since: Date
+): Promise<number> {
   const db = await getDb();
-  if (!db) return inMemoryApiRequestLogs.filter((entry) => entry.apiKeyId === apiKeyId && entry.createdAt >= since).length;
-  const rows = await db.select({ total: count() }).from(apiRequestLogs)
-    .where(and(eq(apiRequestLogs.apiKeyId, apiKeyId), gte(apiRequestLogs.createdAt, since)));
+  if (!db)
+    return inMemoryApiRequestLogs.filter(
+      entry => entry.apiKeyId === apiKeyId && entry.createdAt >= since
+    ).length;
+  const rows = await db
+    .select({ total: count() })
+    .from(apiRequestLogs)
+    .where(
+      and(
+        eq(apiRequestLogs.apiKeyId, apiKeyId),
+        gte(apiRequestLogs.createdAt, since)
+      )
+    );
   return Number(rows[0]?.total ?? 0);
 }
 
-export async function getApiRequestLogsByOrganization(orgId: string, limit = 100): Promise<ApiRequestLogRecord[]> {
+export async function getApiRequestLogsByOrganization(
+  orgId: string,
+  limit = 100
+): Promise<ApiRequestLogRecord[]> {
   const db = await getDb();
-  if (!db) return inMemoryApiRequestLogs.filter((entry) => entry.orgId === orgId).slice(-limit).reverse();
-  return db.select().from(apiRequestLogs).where(eq(apiRequestLogs.orgId, orgId)).orderBy(desc(apiRequestLogs.createdAt)).limit(limit);
+  if (!db)
+    return inMemoryApiRequestLogs
+      .filter(entry => entry.orgId === orgId)
+      .slice(-limit)
+      .reverse();
+  return db
+    .select()
+    .from(apiRequestLogs)
+    .where(eq(apiRequestLogs.orgId, orgId))
+    .orderBy(desc(apiRequestLogs.createdAt))
+    .limit(limit);
 }
 
-export async function getWeeklySummaryPreferences(orgId: string): Promise<WeeklySummaryPreferencesRecord> {
+export async function getWeeklySummaryPreferences(
+  orgId: string
+): Promise<WeeklySummaryPreferencesRecord> {
   const db = await getDb();
   if (!db) {
-    return inMemoryWeeklySummaryPreferences.get(orgId) ?? {
+    return (
+      inMemoryWeeklySummaryPreferences.get(orgId) ?? {
+        id: 0,
+        orgId,
+        ...DEFAULT_WEEKLY_SUMMARY_PREFERENCES,
+        updatedAt: new Date(),
+      }
+    );
+  }
+
+  const rows = await db
+    .select()
+    .from(weeklySummaryPreferences)
+    .where(eq(weeklySummaryPreferences.orgId, orgId))
+    .limit(1);
+  return (
+    rows[0] ?? {
       id: 0,
       orgId,
       ...DEFAULT_WEEKLY_SUMMARY_PREFERENCES,
       updatedAt: new Date(),
-    };
-  }
-
-  const rows = await db.select().from(weeklySummaryPreferences)
-    .where(eq(weeklySummaryPreferences.orgId, orgId))
-    .limit(1);
-  return rows[0] ?? {
-    id: 0,
-    orgId,
-    ...DEFAULT_WEEKLY_SUMMARY_PREFERENCES,
-    updatedAt: new Date(),
-  };
+    }
+  );
 }
 
 export async function upsertWeeklySummaryPreferences(
   orgId: string,
-  preferences: WeeklySummaryPreferencesInput,
+  preferences: WeeklySummaryPreferencesInput
 ): Promise<WeeklySummaryPreferencesRecord> {
   const db = await getDb();
   if (!db) {
@@ -469,34 +633,63 @@ export async function upsertWeeklySummaryPreferences(
     return saved;
   }
 
-  await db.insert(weeklySummaryPreferences).values({ orgId, ...preferences }).onDuplicateKeyUpdate({
-    set: { ...preferences, updatedAt: new Date() },
-  });
+  await db
+    .insert(weeklySummaryPreferences)
+    .values({ orgId, ...preferences })
+    .onDuplicateKeyUpdate({
+      set: { ...preferences, updatedAt: new Date() },
+    });
   return getWeeklySummaryPreferences(orgId);
 }
 
-export async function getEnabledWeeklySummaryPreferences(): Promise<WeeklySummaryPreferencesRecord[]> {
+export async function getEnabledWeeklySummaryPreferences(): Promise<
+  WeeklySummaryPreferencesRecord[]
+> {
   const db = await getDb();
   if (!db) {
-    return Array.from(inMemoryWeeklySummaryPreferences.values())
-      .filter((preferences) => preferences.enabled && Boolean(preferences.toEmail));
+    return Array.from(inMemoryWeeklySummaryPreferences.values()).filter(
+      preferences => preferences.enabled && Boolean(preferences.toEmail)
+    );
   }
-  return db.select().from(weeklySummaryPreferences)
-    .where(and(eq(weeklySummaryPreferences.enabled, true), gte(weeklySummaryPreferences.toEmail, "")));
+  return db
+    .select()
+    .from(weeklySummaryPreferences)
+    .where(
+      and(
+        eq(weeklySummaryPreferences.enabled, true),
+        gte(weeklySummaryPreferences.toEmail, "")
+      )
+    );
 }
 
-export async function hasWeeklySummaryDelivery(orgId: string, periodStart: Date): Promise<boolean> {
+export async function hasWeeklySummaryDelivery(
+  orgId: string,
+  periodStart: Date
+): Promise<boolean> {
   const db = await getDb();
   if (!db) {
-    return inMemoryWeeklySummaryDeliveries.some((delivery) => delivery.orgId === orgId && delivery.periodStart.getTime() === periodStart.getTime());
+    return inMemoryWeeklySummaryDeliveries.some(
+      delivery =>
+        delivery.orgId === orgId &&
+        delivery.periodStart.getTime() === periodStart.getTime()
+    );
   }
-  const rows = await db.select({ id: weeklySummaryDeliveries.id }).from(weeklySummaryDeliveries)
-    .where(and(eq(weeklySummaryDeliveries.orgId, orgId), eq(weeklySummaryDeliveries.periodStart, periodStart)))
+  const rows = await db
+    .select({ id: weeklySummaryDeliveries.id })
+    .from(weeklySummaryDeliveries)
+    .where(
+      and(
+        eq(weeklySummaryDeliveries.orgId, orgId),
+        eq(weeklySummaryDeliveries.periodStart, periodStart)
+      )
+    )
     .limit(1);
   return Boolean(rows[0]);
 }
 
-export async function recordWeeklySummaryDelivery(input: WeeklySummaryDeliveryInput): Promise<void> {
+export async function recordWeeklySummaryDelivery(
+  input: WeeklySummaryDeliveryInput
+): Promise<void> {
   const db = await getDb();
   if (!db) {
     inMemoryWeeklySummaryDeliveries.push({
@@ -518,7 +711,12 @@ export async function recordAuditEvent(input: AuditEventInput): Promise<void> {
   const db = await getDb();
   if (!db) {
     const organizationEvents = inMemoryAuditEvents.get(input.orgId) ?? [];
-    organizationEvents.unshift({ ...input, id: Date.now() + organizationEvents.length, metadataJson, createdAt: new Date() });
+    organizationEvents.unshift({
+      ...input,
+      id: Date.now() + organizationEvents.length,
+      metadataJson,
+      createdAt: new Date(),
+    });
     inMemoryAuditEvents.set(input.orgId, organizationEvents);
     return;
   }
@@ -535,21 +733,43 @@ export async function recordAuditEvent(input: AuditEventInput): Promise<void> {
   });
 }
 
-export async function getAuditEventsByOrganization(orgId: string, limit = 100): Promise<AuditEventRecord[]> {
+export async function getAuditEventsByOrganization(
+  orgId: string,
+  limit = 100
+): Promise<AuditEventRecord[]> {
   const db = await getDb();
   if (!db) return (inMemoryAuditEvents.get(orgId) ?? []).slice(0, limit);
-  return db.select().from(auditEvents)
+  return db
+    .select()
+    .from(auditEvents)
     .where(eq(auditEvents.orgId, orgId))
     .orderBy(desc(auditEvents.createdAt))
     .limit(limit);
 }
 
-export async function getCaseActivity(orgId: string, transactionId: number, limit = 100): Promise<AuditEventRecord[]> {
+export async function getCaseActivity(
+  orgId: string,
+  transactionId: number,
+  limit = 100
+): Promise<AuditEventRecord[]> {
   const subjectId = String(transactionId);
   const db = await getDb();
-  if (!db) return (inMemoryAuditEvents.get(orgId) ?? []).filter((event) => event.subjectType === "case" && event.subjectId === subjectId).slice(0, limit);
-  return db.select().from(auditEvents)
-    .where(and(eq(auditEvents.orgId, orgId), eq(auditEvents.subjectType, "case"), eq(auditEvents.subjectId, subjectId)))
+  if (!db)
+    return (inMemoryAuditEvents.get(orgId) ?? [])
+      .filter(
+        event => event.subjectType === "case" && event.subjectId === subjectId
+      )
+      .slice(0, limit);
+  return db
+    .select()
+    .from(auditEvents)
+    .where(
+      and(
+        eq(auditEvents.orgId, orgId),
+        eq(auditEvents.subjectType, "case"),
+        eq(auditEvents.subjectId, subjectId)
+      )
+    )
     .orderBy(desc(auditEvents.createdAt))
     .limit(limit);
 }
@@ -559,22 +779,48 @@ export async function addCaseComment(input: CaseCommentInput): Promise<void> {
   if (!db) {
     const key = caseKey(input.orgId, input.transactionId);
     const comments = inMemoryComments.get(key) ?? [];
-    comments.unshift({ ...input, id: inMemoryCaseArtifactId++, createdAt: new Date() });
+    comments.unshift({
+      ...input,
+      id: inMemoryCaseArtifactId++,
+      createdAt: new Date(),
+    });
     inMemoryComments.set(key, comments);
     return;
   }
   await db.insert(caseNotes).values(input);
 }
 
-export async function replaceCaseTags(orgId: string, transactionId: number, tags: string[]): Promise<void> {
-  const uniqueTags = Array.from(new Set(tags.map((tag) => tag.trim().toLowerCase()).filter(Boolean)));
+export async function replaceCaseTags(
+  orgId: string,
+  transactionId: number,
+  tags: string[]
+): Promise<void> {
+  const uniqueTags = Array.from(
+    new Set(tags.map(tag => tag.trim().toLowerCase()).filter(Boolean))
+  );
   const db = await getDb();
   if (!db) {
-    inMemoryTags.set(caseKey(orgId, transactionId), uniqueTags.map((tag) => ({ id: inMemoryCaseArtifactId++, orgId, transactionId, tag, createdAt: new Date() })));
+    inMemoryTags.set(
+      caseKey(orgId, transactionId),
+      uniqueTags.map(tag => ({
+        id: inMemoryCaseArtifactId++,
+        orgId,
+        transactionId,
+        tag,
+        createdAt: new Date(),
+      }))
+    );
     return;
   }
-  await db.delete(caseTags).where(and(eq(caseTags.orgId, orgId), eq(caseTags.transactionId, transactionId)));
-  if (uniqueTags.length) await db.insert(caseTags).values(uniqueTags.map((tag) => ({ orgId, transactionId, tag })));
+  await db
+    .delete(caseTags)
+    .where(
+      and(eq(caseTags.orgId, orgId), eq(caseTags.transactionId, transactionId))
+    );
+  if (uniqueTags.length)
+    await db
+      .insert(caseTags)
+      .values(uniqueTags.map(tag => ({ orgId, transactionId, tag })));
 }
 
 export async function addCaseEvidence(input: CaseEvidenceInput): Promise<void> {
@@ -582,29 +828,50 @@ export async function addCaseEvidence(input: CaseEvidenceInput): Promise<void> {
   if (!db) {
     const key = caseKey(input.orgId, input.transactionId);
     const evidence = inMemoryEvidence.get(key) ?? [];
-    evidence.unshift({ ...input, id: inMemoryCaseArtifactId++, createdAt: new Date() });
+    evidence.unshift({
+      ...input,
+      id: inMemoryCaseArtifactId++,
+      createdAt: new Date(),
+    });
     inMemoryEvidence.set(key, evidence);
     return;
   }
   await db.insert(caseEvidence).values(input);
 }
 
-export async function getCaseEvidenceByStorageKey(orgId: string, storageKey: string): Promise<CaseEvidenceRecord | undefined> {
+export async function getCaseEvidenceByStorageKey(
+  orgId: string,
+  storageKey: string
+): Promise<CaseEvidenceRecord | undefined> {
   const db = await getDb();
   if (!db) {
     const evidence = Array.from(inMemoryEvidence.entries())
       .filter(([key]) => key.startsWith(`${orgId}:`))
       .flatMap(([, entries]) => entries);
-    return evidence.find((item) => item.storageKey === storageKey && item.evidenceType === "attachment");
+    return evidence.find(
+      item =>
+        item.storageKey === storageKey && item.evidenceType === "attachment"
+    );
   }
-  const records = await db.select().from(caseEvidence)
-    .where(and(eq(caseEvidence.orgId, orgId), eq(caseEvidence.storageKey, storageKey), eq(caseEvidence.evidenceType, "attachment")))
+  const records = await db
+    .select()
+    .from(caseEvidence)
+    .where(
+      and(
+        eq(caseEvidence.orgId, orgId),
+        eq(caseEvidence.storageKey, storageKey),
+        eq(caseEvidence.evidenceType, "attachment")
+      )
+    )
     .limit(1);
   const record = records[0];
   return record ? { ...record, orgId: record.orgId ?? orgId } : undefined;
 }
 
-export async function getCaseCollaboration(orgId: string, transactionId: number) {
+export async function getCaseCollaboration(
+  orgId: string,
+  transactionId: number
+) {
   const db = await getDb();
   if (!db) {
     const key = caseKey(orgId, transactionId);
@@ -616,9 +883,36 @@ export async function getCaseCollaboration(orgId: string, transactionId: number)
     };
   }
   const [comments, tags, evidence, activity] = await Promise.all([
-    db.select().from(caseNotes).where(and(eq(caseNotes.orgId, orgId), eq(caseNotes.transactionId, transactionId))).orderBy(desc(caseNotes.createdAt)),
-    db.select().from(caseTags).where(and(eq(caseTags.orgId, orgId), eq(caseTags.transactionId, transactionId))).orderBy(desc(caseTags.createdAt)),
-    db.select().from(caseEvidence).where(and(eq(caseEvidence.orgId, orgId), eq(caseEvidence.transactionId, transactionId))).orderBy(desc(caseEvidence.createdAt)),
+    db
+      .select()
+      .from(caseNotes)
+      .where(
+        and(
+          eq(caseNotes.orgId, orgId),
+          eq(caseNotes.transactionId, transactionId)
+        )
+      )
+      .orderBy(desc(caseNotes.createdAt)),
+    db
+      .select()
+      .from(caseTags)
+      .where(
+        and(
+          eq(caseTags.orgId, orgId),
+          eq(caseTags.transactionId, transactionId)
+        )
+      )
+      .orderBy(desc(caseTags.createdAt)),
+    db
+      .select()
+      .from(caseEvidence)
+      .where(
+        and(
+          eq(caseEvidence.orgId, orgId),
+          eq(caseEvidence.transactionId, transactionId)
+        )
+      )
+      .orderBy(desc(caseEvidence.createdAt)),
     getCaseActivity(orgId, transactionId),
   ]);
   return { comments, tags, evidence, activity };
@@ -626,31 +920,34 @@ export async function getCaseCollaboration(orgId: string, transactionId: number)
 
 export async function persistTransaction(
   orgId: string,
-  record: Omit<InsertTransaction, "orgId">,
+  record: Omit<InsertTransaction, "orgId">
 ) {
   const db = await getDb();
   if (!db) return;
 
   const organizationRecord: InsertTransaction = { ...record, orgId };
   try {
-    await db.insert(transactions).values(organizationRecord).onDuplicateKeyUpdate({
-      set: {
-        riskLabel: organizationRecord.riskLabel,
-        riskProbability: organizationRecord.riskProbability,
-        factorJson: organizationRecord.factorJson,
-        deterministicExplanation: organizationRecord.deterministicExplanation,
-        llmSummary: organizationRecord.llmSummary,
-        llmNextStep: organizationRecord.llmNextStep,
-        caseStatus: organizationRecord.caseStatus,
-        caseNote: organizationRecord.caseNote,
-        resolutionReasonCode: organizationRecord.resolutionReasonCode,
-        assigneeId: organizationRecord.assigneeId,
-        assigneeName: organizationRecord.assigneeName,
-        casePriority: organizationRecord.casePriority,
-        dueAt: organizationRecord.dueAt,
-        isNew: organizationRecord.isNew,
-      },
-    });
+    await db
+      .insert(transactions)
+      .values(organizationRecord)
+      .onDuplicateKeyUpdate({
+        set: {
+          riskLabel: organizationRecord.riskLabel,
+          riskProbability: organizationRecord.riskProbability,
+          factorJson: organizationRecord.factorJson,
+          deterministicExplanation: organizationRecord.deterministicExplanation,
+          llmSummary: organizationRecord.llmSummary,
+          llmNextStep: organizationRecord.llmNextStep,
+          caseStatus: organizationRecord.caseStatus,
+          caseNote: organizationRecord.caseNote,
+          resolutionReasonCode: organizationRecord.resolutionReasonCode,
+          assigneeId: organizationRecord.assigneeId,
+          assigneeName: organizationRecord.assigneeName,
+          casePriority: organizationRecord.casePriority,
+          dueAt: organizationRecord.dueAt,
+          isNew: organizationRecord.isNew,
+        },
+      });
   } catch (error) {
     console.error("[FraudLens] Transaction persistence failed", error);
   }

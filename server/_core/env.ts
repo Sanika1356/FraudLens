@@ -15,13 +15,16 @@ export const ENV = {
   forgeApiKey: process.env.BUILT_IN_FORGE_API_KEY ?? "",
   supabaseUrl: process.env.SUPABASE_URL ?? "",
   supabaseServiceRoleKey: process.env.SUPABASE_SERVICE_ROLE_KEY ?? "",
-  supabaseStorageBucket: process.env.SUPABASE_STORAGE_BUCKET ?? "fraudlens-evidence",
+  supabaseStorageBucket:
+    process.env.SUPABASE_STORAGE_BUCKET ?? "fraudlens-evidence",
   /** Optional: alerts continue through webhooks when Resend is not configured. */
   resendApiKey: process.env.RESEND_API_KEY ?? "",
   resendFromEmail: process.env.RESEND_FROM_EMAIL ?? "onboarding@resend.dev",
 };
 
-export function resolveBootstrapRole(openId: string): "analyst" | "manager" | "admin" {
+export function resolveBootstrapRole(
+  openId: string
+): "analyst" | "manager" | "admin" {
   if (openId === ENV.ownerOpenId) return "admin";
   if (ENV.managerOpenIds.includes(openId)) return "manager";
   return "analyst";

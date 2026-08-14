@@ -17,9 +17,12 @@ export const isClientMonitoringEnabled = Boolean(sentryDsn);
 if (isClientMonitoringEnabled) {
   Sentry.init({
     dsn: sentryDsn,
-    environment: import.meta.env.VITE_SENTRY_ENVIRONMENT ?? import.meta.env.MODE,
+    environment:
+      import.meta.env.VITE_SENTRY_ENVIRONMENT ?? import.meta.env.MODE,
     release: import.meta.env.VITE_SENTRY_RELEASE,
-    tracesSampleRate: parseSampleRate(import.meta.env.VITE_SENTRY_TRACES_SAMPLE_RATE),
+    tracesSampleRate: parseSampleRate(
+      import.meta.env.VITE_SENTRY_TRACES_SAMPLE_RATE
+    ),
     enableLogs: true,
     maxBreadcrumbs: 0,
     dataCollection: privacySafeDataCollection,
@@ -39,7 +42,10 @@ export function captureClientException(error: unknown, area: string): void {
   });
 }
 
-export function logClientError(message: string, attributes: Record<string, unknown> = {}): void {
+export function logClientError(
+  message: string,
+  attributes: Record<string, unknown> = {}
+): void {
   if (!isClientMonitoringEnabled) return;
   Sentry.logger.error(message, sanitizeLogAttributes(attributes));
 }

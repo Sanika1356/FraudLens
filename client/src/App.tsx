@@ -1,4 +1,11 @@
-import { OrganizationList, RedirectToSignIn, SignIn, SignUp, useAuth, useOrganization } from "@clerk/react";
+import {
+  OrganizationList,
+  RedirectToSignIn,
+  SignIn,
+  SignUp,
+  useAuth,
+  useOrganization,
+} from "@clerk/react";
 import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import {
@@ -50,7 +57,12 @@ function OrganizationSelectionScreen() {
   const { isLoaded: organizationLoaded, organization } = useOrganization();
 
   if (!authLoaded || !organizationLoaded) {
-    return <div className="min-h-screen bg-[#07111e]" aria-label="Loading organization workspaces" />;
+    return (
+      <div
+        className="min-h-screen bg-[#07111e]"
+        aria-label="Loading organization workspaces"
+      />
+    );
   }
 
   if (!isSignedIn) {
@@ -64,8 +76,13 @@ function OrganizationSelectionScreen() {
   return (
     <main className="flex min-h-screen items-center justify-center bg-[#07111e] px-4 py-10">
       <div className="w-full max-w-md">
-        <p className="mb-4 text-center text-xs font-semibold uppercase tracking-[0.22em] text-cyan-300">FraudLens workspace</p>
-        <OrganizationList afterCreateOrganizationUrl="/" afterSelectOrganizationUrl="/" />
+        <p className="mb-4 text-center text-xs font-semibold uppercase tracking-[0.22em] text-cyan-300">
+          FraudLens workspace
+        </p>
+        <OrganizationList
+          afterCreateOrganizationUrl="/"
+          afterSelectOrganizationUrl="/"
+        />
       </div>
     </main>
   );
@@ -76,7 +93,12 @@ function ProtectedWorkspace() {
   const { isLoaded: organizationLoaded, organization } = useOrganization();
 
   if (!isLoaded || !organizationLoaded) {
-    return <div className="min-h-screen bg-[#07111e]" aria-label="Loading FraudLens" />;
+    return (
+      <div
+        className="min-h-screen bg-[#07111e]"
+        aria-label="Loading FraudLens"
+      />
+    );
   }
 
   if (!isSignedIn) {
@@ -94,9 +116,19 @@ function AuthenticationScreen({ mode }: { mode: "sign-in" | "sign-up" }) {
   return (
     <main className="flex min-h-screen items-center justify-center bg-[#07111e] px-4 py-10">
       {mode === "sign-in" ? (
-        <SignIn path="/sign-in" routing="path" signUpUrl="/sign-up" fallbackRedirectUrl="/" />
+        <SignIn
+          path="/sign-in"
+          routing="path"
+          signUpUrl="/sign-up"
+          fallbackRedirectUrl="/"
+        />
       ) : (
-        <SignUp path="/sign-up" routing="path" signInUrl="/sign-in" fallbackRedirectUrl="/" />
+        <SignUp
+          path="/sign-up"
+          routing="path"
+          signInUrl="/sign-in"
+          fallbackRedirectUrl="/"
+        />
       )}
     </main>
   );
@@ -109,12 +141,24 @@ export default function App() {
         <TooltipProvider>
           <Toaster theme="dark" />
           <Switch>
-            <Route path="/sign-in/*"><AuthenticationScreen mode="sign-in" /></Route>
-            <Route path="/sign-in"><AuthenticationScreen mode="sign-in" /></Route>
-            <Route path="/sign-up/*"><AuthenticationScreen mode="sign-up" /></Route>
-            <Route path="/sign-up"><AuthenticationScreen mode="sign-up" /></Route>
-            <Route path="/select-organization"><OrganizationSelectionScreen /></Route>
-            <Route><ProtectedWorkspace /></Route>
+            <Route path="/sign-in/*">
+              <AuthenticationScreen mode="sign-in" />
+            </Route>
+            <Route path="/sign-in">
+              <AuthenticationScreen mode="sign-in" />
+            </Route>
+            <Route path="/sign-up/*">
+              <AuthenticationScreen mode="sign-up" />
+            </Route>
+            <Route path="/sign-up">
+              <AuthenticationScreen mode="sign-up" />
+            </Route>
+            <Route path="/select-organization">
+              <OrganizationSelectionScreen />
+            </Route>
+            <Route>
+              <ProtectedWorkspace />
+            </Route>
           </Switch>
         </TooltipProvider>
       </ThemeProvider>

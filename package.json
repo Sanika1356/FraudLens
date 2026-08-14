@@ -9,6 +9,7 @@
     "start": "node scripts/start.mjs",
     "check": "tsc --noEmit",
     "format": "prettier --write .",
+    "format:check": "prettier --check .",
     "test": "vitest run",
     "weekly:send": "tsx scripts/send-weekly-summary.ts",
     "db:push": "drizzle-kit generate && drizzle-kit migrate"

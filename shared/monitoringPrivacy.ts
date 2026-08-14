@@ -1,4 +1,5 @@
-const SENSITIVE_KEY_PATTERN = /authorization|api[_-]?key|cookie|credential|password|secret|session|token/i;
+const SENSITIVE_KEY_PATTERN =
+  /authorization|api[_-]?key|cookie|credential|password|secret|session|token/i;
 const EMAIL_PATTERN = /[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi;
 const BEARER_PATTERN = /\bBearer\s+[A-Za-z0-9._~+/=-]+/gi;
 const QUERY_VALUE_PATTERN = /([?&][^=\s]+)=([^&\s]+)/g;
@@ -27,10 +28,12 @@ function redactValue(value: unknown, key?: string): unknown {
 
   if (value && typeof value === "object") {
     return Object.fromEntries(
-      Object.entries(value as MonitoringRecord).map(([entryKey, entryValue]) => [
-        entryKey,
-        redactValue(entryValue, entryKey),
-      ]),
+      Object.entries(value as MonitoringRecord).map(
+        ([entryKey, entryValue]) => [
+          entryKey,
+          redactValue(entryValue, entryKey),
+        ]
+      )
     );
   }
 
@@ -68,6 +71,8 @@ export const privacySafeDataCollection = {
   stackFrameVariables: false,
 } as const;
 
-export function sanitizeLogAttributes(attributes: Record<string, unknown>): Record<string, unknown> {
+export function sanitizeLogAttributes(
+  attributes: Record<string, unknown>
+): Record<string, unknown> {
   return redactValue(attributes) as Record<string, unknown>;
 }

@@ -15,7 +15,9 @@ describe("scoreTransaction", () => {
 
     expect(decision.riskLevel).toBe("low");
     expect(decision.probability).toBe(8);
-    expect(decision.deterministicExplanation).toContain("Human review should confirm");
+    expect(decision.deterministicExplanation).toContain(
+      "Human review should confirm"
+    );
   });
 
   it("surfaces explainable leading factors for a high-risk event", () => {
@@ -31,7 +33,14 @@ describe("scoreTransaction", () => {
 
     expect(decision.riskLevel).toBe("high");
     expect(decision.probability).toBeGreaterThanOrEqual(70);
-    expect(decision.factors.map((factor) => factor.key)).toEqual(expect.arrayContaining(["high_amount", "new_device", "country_mismatch", "velocity_high"]));
+    expect(decision.factors.map(factor => factor.key)).toEqual(
+      expect.arrayContaining([
+        "high_amount",
+        "new_device",
+        "country_mismatch",
+        "velocity_high",
+      ])
+    );
   });
 
   it("returns a plain-English safe fallback next step", () => {

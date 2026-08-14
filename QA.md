@@ -2,12 +2,12 @@
 
 ## Automated checks
 
-| Check | Evidence | Result |
-|---|---|---|
-| Type safety | `pnpm check` | Passed with no TypeScript errors |
-| Risk scoring | `server/riskEngine.test.ts` | Low, medium, and high labels plus explanations covered |
-| Workflow validation | `server/riskWorkflow.test.ts` | Invalid input, note validation, and case transitions covered |
-| Authentication baseline | `server/auth.logout.test.ts` | Existing session logout behavior covered |
+| Check                   | Evidence                      | Result                                                       |
+| ----------------------- | ----------------------------- | ------------------------------------------------------------ |
+| Type safety             | `pnpm check`                  | Passed with no TypeScript errors                             |
+| Risk scoring            | `server/riskEngine.test.ts`   | Low, medium, and high labels plus explanations covered       |
+| Workflow validation     | `server/riskWorkflow.test.ts` | Invalid input, note validation, and case transitions covered |
+| Authentication baseline | `server/auth.logout.test.ts`  | Existing session logout behavior covered                     |
 
 ## Keyboard and accessibility review
 
@@ -15,15 +15,15 @@ FraudLens uses the shared button, input, and textarea primitives with `focus-vis
 
 ## Route-level workflow-state review
 
-| View | Loading | Error | Empty / initial | Responsive verification |
-|---|---|---|---|---|
-| Command Center | Active risk signal status | Reload guidance | No-alert banner is omitted when none exist | Desktop checked |
-| Transactions | Analyst queue status | Reload guidance | “No transactions match these filters” | Desktop checked |
-| Instant Assessment | Disabled “Assessing…” action | Mutation toast and field validation | “Ready for context” initial panel | Desktop and mobile checked |
-| Transaction Detail | Evidence status | Invalid/not-found state | No-risk-evidence copy | Desktop and mobile checked |
-| Casework | Awaiting-review status | Reload guidance | “No cases await review” | Desktop and mobile checked |
-| Model Health | Evaluation evidence status | Reload guidance | Not applicable; evaluation artifact is required | Desktop checked |
-| Drift Monitor | Feature-distribution status | Reload guidance | Not applicable; four monitored features are required | Desktop checked |
+| View               | Loading                      | Error                               | Empty / initial                                      | Responsive verification    |
+| ------------------ | ---------------------------- | ----------------------------------- | ---------------------------------------------------- | -------------------------- |
+| Command Center     | Active risk signal status    | Reload guidance                     | No-alert banner is omitted when none exist           | Desktop checked            |
+| Transactions       | Analyst queue status         | Reload guidance                     | “No transactions match these filters”                | Desktop checked            |
+| Instant Assessment | Disabled “Assessing…” action | Mutation toast and field validation | “Ready for context” initial panel                    | Desktop and mobile checked |
+| Transaction Detail | Evidence status              | Invalid/not-found state             | No-risk-evidence copy                                | Desktop and mobile checked |
+| Casework           | Awaiting-review status       | Reload guidance                     | “No cases await review”                              | Desktop and mobile checked |
+| Model Health       | Evaluation evidence status   | Reload guidance                     | Not applicable; evaluation artifact is required      | Desktop checked            |
+| Drift Monitor      | Feature-distribution status  | Reload guidance                     | Not applicable; four monitored features are required | Desktop checked            |
 
 ## Manual keyboard check
 

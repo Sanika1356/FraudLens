@@ -15,40 +15,40 @@ FraudLens is an internal transaction-risk intelligence workspace for investigato
 
 Analysts need to decide which transactions merit investigation without working across disconnected spreadsheets, risk-model outputs, and case notes. A useful workspace must prioritise potentially harmful activity while preserving enough context for a reviewer to understand and override a prediction.
 
-| User | Primary objective | Core need |
-|---|---|---|
-| Fraud investigator | Review and resolve potentially suspicious activity | An ordered work queue, clear rationale, and a place to record a decision |
-| Fraud operations analyst | Monitor risk patterns and case throughput | A reliable overview of risk levels, status, and trend signals |
-| Model reviewer | Check whether model performance or feature distributions are deteriorating | Performance metrics, a confusion matrix, and a baseline-versus-recent drift view |
-| Portfolio reviewer | Assess engineering and applied-ML capability | A coherent product narrative, clean UX, documented limitations, and testable system behaviour |
+| User                     | Primary objective                                                          | Core need                                                                                     |
+| ------------------------ | -------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
+| Fraud investigator       | Review and resolve potentially suspicious activity                         | An ordered work queue, clear rationale, and a place to record a decision                      |
+| Fraud operations analyst | Monitor risk patterns and case throughput                                  | A reliable overview of risk levels, status, and trend signals                                 |
+| Model reviewer           | Check whether model performance or feature distributions are deteriorating | Performance metrics, a confusion matrix, and a baseline-versus-recent drift view              |
+| Portfolio reviewer       | Assess engineering and applied-ML capability                               | A coherent product narrative, clean UX, documented limitations, and testable system behaviour |
 
 ## 3. Goals and success criteria
 
 The first release must support the complete flow from submission through decision: a reviewer submits or opens a transaction, receives a low/medium/high risk score and understandable rationale, records a case outcome, and can later find the transaction through history filters.
 
-| Goal | Acceptance criterion |
-|---|---|
-| Rapid triage | Every submission receives a risk label, probability, and contributors in the same interaction without page reload |
-| Explainability | Every prediction contains at least two plain-English drivers; no raw coefficient, feature key, or ML jargon is shown as the primary explanation |
-| Case continuity | A reviewer can change an alert to **under review**, **confirmed fraud**, or **legitimate**, and can save a non-empty note |
-| Observability | The dashboard visibly distinguishes newly flagged high-risk alerts, reports fixed evaluation metrics, and shows baseline-versus-recent feature comparisons |
-| Consistency | All screens use exactly the labels **low**, **medium**, and **high** for risk, and exactly **under review**, **confirmed fraud**, and **legitimate** for case status |
-| Presentation quality | Desktop and mobile views have readable contrast, keyboard-reachable controls, visible loading/empty/error states, and no placeholder workflow presented as complete |
+| Goal                 | Acceptance criterion                                                                                                                                                 |
+| -------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Rapid triage         | Every submission receives a risk label, probability, and contributors in the same interaction without page reload                                                    |
+| Explainability       | Every prediction contains at least two plain-English drivers; no raw coefficient, feature key, or ML jargon is shown as the primary explanation                      |
+| Case continuity      | A reviewer can change an alert to **under review**, **confirmed fraud**, or **legitimate**, and can save a non-empty note                                            |
+| Observability        | The dashboard visibly distinguishes newly flagged high-risk alerts, reports fixed evaluation metrics, and shows baseline-versus-recent feature comparisons           |
+| Consistency          | All screens use exactly the labels **low**, **medium**, and **high** for risk, and exactly **under review**, **confirmed fraud**, and **legitimate** for case status |
+| Presentation quality | Desktop and mobile views have readable contrast, keyboard-reachable controls, visible loading/empty/error states, and no placeholder workflow presented as complete  |
 
 ## 4. Scope
 
 ### In scope
 
-| Area | Requirement |
-|---|---|
-| Analyst home | KPI cards, high-risk alert banner, recent flagged activity, risk distribution, and an ordered queue |
-| Manual prediction | Validated form for amount, merchant category, country, device status, transaction time, and recent-transaction count; returns an instant scored result |
-| Transaction history | Filterable table with risk, case status, date range, and merchant category filters |
-| Case management | Detail view with outcome controls, analyst notes, audit timestamp, and contributor list |
+| Area                       | Requirement                                                                                                                                            |
+| -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Analyst home               | KPI cards, high-risk alert banner, recent flagged activity, risk distribution, and an ordered queue                                                    |
+| Manual prediction          | Validated form for amount, merchant category, country, device status, transaction time, and recent-transaction count; returns an instant scored result |
+| Transaction history        | Filterable table with risk, case status, date range, and merchant category filters                                                                     |
+| Case management            | Detail view with outcome controls, analyst notes, audit timestamp, and contributor list                                                                |
 | Plain-English explanations | Deterministic explanation available for every score; optional LLM refinement performed server-side with structured output and a deterministic fallback |
-| Model performance | Held-out evaluation summary with precision, recall, F1-score, and an accessible confusion matrix |
-| Drift monitoring | Baseline and recent distributions for selected transaction features, a drift indicator, and an explicit demonstration-data disclaimer |
-| Authentication | Investigator workspace uses the scaffolded sign-in flow; authorised data mutations are protected |
+| Model performance          | Held-out evaluation summary with precision, recall, F1-score, and an accessible confusion matrix                                                       |
+| Drift monitoring           | Baseline and recent distributions for selected transaction features, a drift indicator, and an explicit demonstration-data disclaimer                  |
+| Authentication             | Investigator workspace uses the scaffolded sign-in flow; authorised data mutations are protected                                                       |
 
 ### Explicit non-goals for version 1
 
@@ -56,18 +56,18 @@ The release will not process real card data, integrate with payment networks, ma
 
 ## 5. Functional requirements
 
-| ID | Requirement |
-|---|---|
-| FR-01 | The system shall assign each transaction a probability from 0–100 and a risk label: low, medium, or high. |
-| FR-02 | The risk engine shall expose the top contributing factors and a safe, readable deterministic explanation for every score. |
-| FR-03 | A signed-in user shall submit a transaction manually and receive the stored prediction immediately after successful validation. |
-| FR-04 | The queue shall emphasise newly created high-risk transactions through a dedicated alert treatment and visual state. |
-| FR-05 | A reviewer shall set an investigation status to under review, confirmed fraud, or legitimate and add a note. |
-| FR-06 | The history table shall filter by risk level, status, merchant category, and inclusive date range. |
-| FR-07 | The model-quality page shall present precision, recall, F1-score, a confusion matrix, and a clear dataset label. |
-| FR-08 | The drift page shall compare selected recent feature summaries against stored training baselines and classify the comparison as stable, watch, or elevated. |
+| ID    | Requirement                                                                                                                                                                                      |
+| ----- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| FR-01 | The system shall assign each transaction a probability from 0–100 and a risk label: low, medium, or high.                                                                                        |
+| FR-02 | The risk engine shall expose the top contributing factors and a safe, readable deterministic explanation for every score.                                                                        |
+| FR-03 | A signed-in user shall submit a transaction manually and receive the stored prediction immediately after successful validation.                                                                  |
+| FR-04 | The queue shall emphasise newly created high-risk transactions through a dedicated alert treatment and visual state.                                                                             |
+| FR-05 | A reviewer shall set an investigation status to under review, confirmed fraud, or legitimate and add a note.                                                                                     |
+| FR-06 | The history table shall filter by risk level, status, merchant category, and inclusive date range.                                                                                               |
+| FR-07 | The model-quality page shall present precision, recall, F1-score, a confusion matrix, and a clear dataset label.                                                                                 |
+| FR-08 | The drift page shall compare selected recent feature summaries against stored training baselines and classify the comparison as stable, watch, or elevated.                                      |
 | FR-09 | An LLM summary procedure shall translate derived factors into two concise, investigator-friendly sentences using structured output; a deterministic fallback shall be returned on model failure. |
-| FR-10 | The user interface shall keep risk and case-status vocabulary consistent in every page, filter, badge, and empty state. |
+| FR-10 | The user interface shall keep risk and case-status vocabulary consistent in every page, filter, badge, and empty state.                                                                          |
 
 ## 6. Experience and visual direction
 
@@ -77,14 +77,14 @@ The primary navigation will be **Command Center**, **Transactions**, **New Asses
 
 ## 7. Domain model
 
-| Entity | Essential fields |
-|---|---|
-| Transaction | Public reference, amount, currency, merchant category, transaction country, account country, device status, timestamp, recent transaction count, created time |
-| Risk assessment | Transaction reference, probability, risk label, primary factors, deterministic explanation, LLM explanation, model version, scored time |
-| Case record | Transaction reference, status, latest note, reviewer identifier, updated time |
-| Case note | Case reference, note text, author identifier, created time |
-| Model metric snapshot | Version, dataset label, precision, recall, F1-score, true/false positive/negative counts, recorded time |
-| Drift snapshot | Feature name, training baseline summary, recent summary, change score, status, recorded time |
+| Entity                | Essential fields                                                                                                                                              |
+| --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Transaction           | Public reference, amount, currency, merchant category, transaction country, account country, device status, timestamp, recent transaction count, created time |
+| Risk assessment       | Transaction reference, probability, risk label, primary factors, deterministic explanation, LLM explanation, model version, scored time                       |
+| Case record           | Transaction reference, status, latest note, reviewer identifier, updated time                                                                                 |
+| Case note             | Case reference, note text, author identifier, created time                                                                                                    |
+| Model metric snapshot | Version, dataset label, precision, recall, F1-score, true/false positive/negative counts, recorded time                                                       |
+| Drift snapshot        | Feature name, training baseline summary, recent summary, change score, status, recorded time                                                                  |
 
 ## 8. Risk-engine design
 
@@ -100,15 +100,15 @@ The LLM summary procedure runs only on the server. It receives the risk level, r
 
 ## 10. Technical architecture
 
-| Layer | Approach |
-|---|---|
-| Client | React 19, TypeScript, Tailwind, shadcn/ui, Recharts, Wouter |
-| Application API | Express and tRPC procedures with Zod input validation |
-| Persistence | MySQL/TiDB through Drizzle ORM |
-| Risk inference | TypeScript adapter applying exported logistic-regression coefficients; no long-running ML service |
-| Explanation | Deterministic factor translator plus optional server-side built-in LLM structured response |
-| Authentication | Scaffolded OAuth and protected procedures |
-| Testing | Vitest for scoring thresholds, input validation, explanation fallback, case status transitions, and filtering |
+| Layer           | Approach                                                                                                      |
+| --------------- | ------------------------------------------------------------------------------------------------------------- |
+| Client          | React 19, TypeScript, Tailwind, shadcn/ui, Recharts, Wouter                                                   |
+| Application API | Express and tRPC procedures with Zod input validation                                                         |
+| Persistence     | MySQL/TiDB through Drizzle ORM                                                                                |
+| Risk inference  | TypeScript adapter applying exported logistic-regression coefficients; no long-running ML service             |
+| Explanation     | Deterministic factor translator plus optional server-side built-in LLM structured response                    |
+| Authentication  | Scaffolded OAuth and protected procedures                                                                     |
+| Testing         | Vitest for scoring thresholds, input validation, explanation fallback, case status transitions, and filtering |
 
 ## 11. Release sequence
 

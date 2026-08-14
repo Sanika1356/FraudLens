@@ -6,15 +6,15 @@
 
 ## Product capabilities
 
-| Capability | What it demonstrates |
-|---|---|
-| Command Center | Priority review queue, high-risk alert emphasis, open-case counts, and assessed activity overview |
-| Instant Assessment | Immediate risk probability, low/medium/high label, contributing signals, and reviewer-friendly rationale |
-| Transaction History | Filters for risk level, case outcome, merchant category, and date range; refreshes periodically for new alerts |
-| Casework | Investigation notes and controlled case outcomes: under review, confirmed fraud, or legitimate |
-| Investigator Summaries | Clear risk-factor rationale and concise, review-ready next-step guidance |
-| Model Health | Precision, recall, F1 score, PR-AUC, decision threshold, and confusion-matrix counts from a public evaluation artifact |
-| Drift Monitor | Baseline-versus-recent comparisons for amount, new-device rate, cross-border rate, and night-time activity |
+| Capability             | What it demonstrates                                                                                                   |
+| ---------------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| Command Center         | Priority review queue, high-risk alert emphasis, open-case counts, and assessed activity overview                      |
+| Instant Assessment     | Immediate risk probability, low/medium/high label, contributing signals, and reviewer-friendly rationale               |
+| Transaction History    | Filters for risk level, case outcome, merchant category, and date range; refreshes periodically for new alerts         |
+| Casework               | Investigation notes and controlled case outcomes: under review, confirmed fraud, or legitimate                         |
+| Investigator Summaries | Clear risk-factor rationale and concise, review-ready next-step guidance                                               |
+| Model Health           | Precision, recall, F1 score, PR-AUC, decision threshold, and confusion-matrix counts from a public evaluation artifact |
+| Drift Monitor          | Baseline-versus-recent comparisons for amount, new-device rate, cross-border rate, and night-time activity             |
 
 ## Technical architecture
 
@@ -62,14 +62,14 @@ pnpm test
 
 ## Key routes
 
-| Route | Purpose |
-|---|---|
-| `/` | Command Center |
-| `/transactions` | Filterable transaction history |
-| `/assess` | Manual instant assessment |
-| `/casework` | Review workflow and case notes |
+| Route           | Purpose                                 |
+| --------------- | --------------------------------------- |
+| `/`             | Command Center                          |
+| `/transactions` | Filterable transaction history          |
+| `/assess`       | Manual instant assessment               |
+| `/casework`     | Review workflow and case notes          |
 | `/model-health` | Evaluation metrics and confusion matrix |
-| `/drift` | Data-drift monitoring |
+| `/drift`        | Data-drift monitoring                   |
 
 ## Product design notes
 
@@ -84,19 +84,19 @@ FraudLens is designed around a few practical review principles:
 
 FraudLens includes a [`railway.toml`](./railway.toml) configuration for Railpack builds, database migrations before each release, a production start command, safe restart behavior, and a `/health` endpoint that returns HTTP 200. Railway must build with the same `VITE_CLERK_PUBLISHABLE_KEY` used by the client and run with the server-only variables below. Add these in **Railway → Project → Service → Variables**; never commit them to Git.
 
-| Variable | Required | Purpose |
-|---|---:|---|
-| `VITE_CLERK_PUBLISHABLE_KEY` | Yes | Clerk public key compiled into the React client during the Railway build. |
-| `CLERK_PUBLISHABLE_KEY` | Yes | Clerk publishable key used by the Express authentication middleware. |
-| `CLERK_SECRET_KEY` | Yes | Server-only Clerk secret key. |
-| `OWNER_OPEN_ID` | Yes | Clerk user ID that receives the initial administrator role. |
-| `DATABASE_URL` | Yes | TiDB Cloud MySQL connection string, including its TLS parameters. |
-| `SUPABASE_URL` | Yes | Supabase project URL for private evidence storage. |
-| `SUPABASE_SERVICE_ROLE_KEY` | Yes | Server-only Supabase service-role key. |
-| `SUPABASE_STORAGE_BUCKET` | Yes | Private evidence bucket name, normally `fraudlens-evidence`. |
-| `RESEND_API_KEY` | No | Enables email alerts and weekly risk summaries. |
-| `RESEND_FROM_EMAIL` | No | Verified Resend sender; omit it for limited `onboarding@resend.dev` testing. |
-| `MANAGER_OPEN_IDS` | No | Comma-separated Clerk user IDs that should start with manager access. |
+| Variable                     | Required | Purpose                                                                      |
+| ---------------------------- | -------: | ---------------------------------------------------------------------------- |
+| `VITE_CLERK_PUBLISHABLE_KEY` |      Yes | Clerk public key compiled into the React client during the Railway build.    |
+| `CLERK_PUBLISHABLE_KEY`      |      Yes | Clerk publishable key used by the Express authentication middleware.         |
+| `CLERK_SECRET_KEY`           |      Yes | Server-only Clerk secret key.                                                |
+| `OWNER_OPEN_ID`              |      Yes | Clerk user ID that receives the initial administrator role.                  |
+| `DATABASE_URL`               |      Yes | TiDB Cloud MySQL connection string, including its TLS parameters.            |
+| `SUPABASE_URL`               |      Yes | Supabase project URL for private evidence storage.                           |
+| `SUPABASE_SERVICE_ROLE_KEY`  |      Yes | Server-only Supabase service-role key.                                       |
+| `SUPABASE_STORAGE_BUCKET`    |      Yes | Private evidence bucket name, normally `fraudlens-evidence`.                 |
+| `RESEND_API_KEY`             |       No | Enables email alerts and weekly risk summaries.                              |
+| `RESEND_FROM_EMAIL`          |       No | Verified Resend sender; omit it for limited `onboarding@resend.dev` testing. |
+| `MANAGER_OPEN_IDS`           |       No | Comma-separated Clerk user IDs that should start with manager access.        |
 
 To release, create a Railway project from the GitHub repository and select the `main` branch. The checked-in deployment configuration performs `pnpm install --frozen-lockfile && pnpm build`, then applies committed Drizzle migrations before it starts the production server. Generate a Railway domain after the first successful deployment. For a custom domain, add it under the service's networking settings, then create the DNS record Railway provides and add the final `https://` domain to Clerk's production allowed origins and redirect URLs.
 
@@ -112,15 +112,15 @@ FraudLens supports optional, privacy-safe monitoring through Sentry. The client 
 
 > **Privacy policy enforced in code:** FraudLens disables automatic user information, cookies, HTTP headers, HTTP bodies, URL query parameters, stack-frame local variables, and session breadcrumbs. A second filter removes user, request, and arbitrary diagnostic payloads from every captured event and redacts email addresses, Bearer credentials, query values, and sensitive attribute names before delivery. Do not add transaction data, names, email addresses, API keys, webhook URLs, or raw request objects to Sentry context.
 
-| Variable | Scope | Required | Purpose |
-|---|---|---:|---|
-| `VITE_SENTRY_DSN` | Client-visible | Yes, for browser monitoring | DSN for a Sentry React project. A DSN is safe to expose in the browser; it identifies the reporting destination but does not grant project administration. |
-| `SENTRY_DSN` | Server-only | Yes, for server monitoring | DSN for a separate Sentry Node/Express project. |
-| `VITE_SENTRY_ENVIRONMENT` / `SENTRY_ENVIRONMENT` | Client / server | No | Environment label, such as `production`. |
-| `VITE_SENTRY_TRACES_SAMPLE_RATE` / `SENTRY_TRACES_SAMPLE_RATE` | Client / server | No | Decimal trace sample rate between `0` and `1`; FraudLens defaults to `0.1` in production and `0` outside it. |
-| `VITE_SENTRY_RELEASE` / `SENTRY_RELEASE` | Client / server / build | No | Shared release name, such as `fraudlens@<commit-sha>`. Set both values to match uploaded browser source maps to client events. |
-| `SENTRY_ORG` and `SENTRY_PROJECT` | Build-only | No | Organization and React project slugs used only for source-map upload. |
-| `SENTRY_AUTH_TOKEN` | Build-only, secret | No | Sentry organization or personal token with the documented source-map upload permissions. Never use a `VITE_` prefix or commit this value. |
+| Variable                                                       | Scope                   |                    Required | Purpose                                                                                                                                                    |
+| -------------------------------------------------------------- | ----------------------- | --------------------------: | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `VITE_SENTRY_DSN`                                              | Client-visible          | Yes, for browser monitoring | DSN for a Sentry React project. A DSN is safe to expose in the browser; it identifies the reporting destination but does not grant project administration. |
+| `SENTRY_DSN`                                                   | Server-only             |  Yes, for server monitoring | DSN for a separate Sentry Node/Express project.                                                                                                            |
+| `VITE_SENTRY_ENVIRONMENT` / `SENTRY_ENVIRONMENT`               | Client / server         |                          No | Environment label, such as `production`.                                                                                                                   |
+| `VITE_SENTRY_TRACES_SAMPLE_RATE` / `SENTRY_TRACES_SAMPLE_RATE` | Client / server         |                          No | Decimal trace sample rate between `0` and `1`; FraudLens defaults to `0.1` in production and `0` outside it.                                               |
+| `VITE_SENTRY_RELEASE` / `SENTRY_RELEASE`                       | Client / server / build |                          No | Shared release name, such as `fraudlens@<commit-sha>`. Set both values to match uploaded browser source maps to client events.                             |
+| `SENTRY_ORG` and `SENTRY_PROJECT`                              | Build-only              |                          No | Organization and React project slugs used only for source-map upload.                                                                                      |
+| `SENTRY_AUTH_TOKEN`                                            | Build-only, secret      |                          No | Sentry organization or personal token with the documented source-map upload permissions. Never use a `VITE_` prefix or commit this value.                  |
 
 To activate monitoring, create two projects in your Sentry account: a **React** project for the client and a **Node/Express** project for the server. Copy the React project DSN into `VITE_SENTRY_DSN` and the server project's DSN into `SENTRY_DSN`. Add the same values to Railway service variables. Set both environment labels to `production` and begin with the default `0.1` trace rate to minimize free-tier event volume. Sentry documents both browser and Node initialization, including the requirement that each SDK initializes before the rest of the corresponding application entry point.[^sentry-react] [^sentry-node]
 
@@ -129,9 +129,29 @@ For readable production browser stack traces, create a source-map upload token i
 After deployment, visit the dashboard, invoke a deliberately safe error test only in a development or staging environment, and confirm that Sentry shows the event with the appropriate client or server project, `production` environment, and no user, request, body, cookie, query, or breadcrumb fields. Do not trigger errors with real transaction or customer data.
 
 [^sentry-pricing]: [Sentry pricing](https://sentry.io/pricing/)
+
 [^sentry-react]: [Sentry React SDK setup](https://docs.sentry.io/platforms/javascript/guides/react/)
+
 [^sentry-node]: [Sentry Node SDK setup](https://docs.sentry.io/platforms/javascript/guides/node/)
+
 [^sentry-vite]: [Sentry Vite source-map uploads](https://docs.sentry.io/platforms/javascript/sourcemaps/uploading/vite/)
+
+## Continuous integration
+
+The `Continuous integration` GitHub Actions workflow runs on every pull request targeting `main`, every push to `main`, and manual dispatch. It installs the dependency lockfile exactly and then runs the same quality gates required locally.
+
+| Gate             | Command             | Purpose                                                                  |
+| ---------------- | ------------------- | ------------------------------------------------------------------------ |
+| Formatting       | `pnpm format:check` | Detects files that are not formatted by Prettier without modifying them. |
+| Type safety      | `pnpm check`        | Runs the TypeScript compiler without emitting files.                     |
+| Unit tests       | `pnpm test`         | Runs the Vitest suite.                                                   |
+| Production build | `pnpm build`        | Builds the Vite client and bundled Express server used by Railway.       |
+
+The workflow has read-only repository permissions, uses the committed pnpm lockfile, times out after 15 minutes, and cancels superseded checks for the same branch. It does not use production secrets, so pull-request checks remain safe for ordinary source changes.
+
+To make CI a mandatory release gate, open the repository’s **Settings → Rules → Rulesets** (or **Branches** for legacy branch protection), create a rule for `main`, enable required status checks, and select **Format, type check, test, and build**. GitHub documents that required status checks must complete successfully, be skipped, or be neutral before a protected branch can be changed.[^github-protection]
+
+[^github-protection]: [GitHub: About protected branches](https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/managing-protected-branches/about-protected-branches)
 
 ## Current limitations and next steps
 

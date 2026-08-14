@@ -15,7 +15,8 @@ function hasPrefix(content: Buffer, prefix: number[]): boolean {
 }
 
 function validateUtf8Text(content: Buffer, label: string): void {
-  if (content.includes(0)) throw new Error(`${label} files cannot contain null bytes.`);
+  if (content.includes(0))
+    throw new Error(`${label} files cannot contain null bytes.`);
   try {
     new TextDecoder("utf-8", { fatal: true }).decode(content);
   } catch {
@@ -38,11 +39,17 @@ export function decodeAndValidateEvidenceAttachment(input: {
   }
   const extension = fileName.slice(fileName.lastIndexOf(".")).toLowerCase();
   if (!expectedExtensions[input.mimeType].includes(extension)) {
-    throw new Error("The evidence file extension does not match its declared file type.");
+    throw new Error(
+      "The evidence file extension does not match its declared file type."
+    );
   }
 
   const normalizedBase64 = input.contentBase64.replace(/\s/g, "");
-  if (!/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(normalizedBase64)) {
+  if (
+    !/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(
+      normalizedBase64
+    )
+  ) {
     throw new Error("The uploaded evidence content is not valid base64 data.");
   }
 
@@ -53,13 +60,19 @@ export function decodeAndValidateEvidenceAttachment(input: {
 
   switch (input.mimeType) {
     case "application/pdf":
-      if (!hasPrefix(content, [0x25, 0x50, 0x44, 0x46, 0x2d])) throw new Error("PDF evidence must have a valid PDF header.");
+      if (!hasPrefix(content, [0x25, 0x50, 0x44, 0x46, 0x2d]))
+        throw new Error("PDF evidence must have a valid PDF header.");
       break;
     case "image/png":
-      if (!hasPrefix(content, [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])) throw new Error("PNG evidence must have a valid PNG header.");
+      if (!hasPrefix(content, [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))
+        throw new Error("PNG evidence must have a valid PNG header.");
       break;
     case "image/jpeg":
-      if (!hasPrefix(content, [0xff, 0xd8]) || content[content.length - 2] !== 0xff || content[content.length - 1] !== 0xd9) {
+      if (
+        !hasPrefix(content, [0xff, 0xd8]) ||
+        content[content.length - 2] !== 0xff ||
+        content[content.length - 1] !== 0xd9
+      ) {
         throw new Error("JPEG evidence must have valid JPEG markers.");
       }
       break;

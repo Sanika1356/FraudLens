@@ -1,23 +1,59 @@
 import type { Express, Request, Response } from "express";
 import { z } from "zod";
-import { extractBearerApiKey, hashApiKey, isApiKeyActive, parseApiKeyScopes, PUBLIC_API_KEY_SCOPE, PUBLIC_API_RATE_LIMIT_PER_MINUTE } from "./apiKeys";
-import { countApiRequestsSince, getApiKeyByHash, getTransactionReferencesByOrganization, recordApiRequestLog, touchApiKeyLastUsed } from "./db";
+import {
+  extractBearerApiKey,
+  hashApiKey,
+  isApiKeyActive,
+  parseApiKeyScopes,
+  PUBLIC_API_KEY_SCOPE,
+  PUBLIC_API_RATE_LIMIT_PER_MINUTE,
+} from "./apiKeys";
+import {
+  countApiRequestsSince,
+  getApiKeyByHash,
+  getTransactionReferencesByOrganization,
+  recordApiRequestLog,
+  touchApiKeyLastUsed,
+} from "./db";
 import { riskInputSchema, submitRiskAssessment } from "./routers";
 import type { RiskInput } from "./riskEngine";
 import { captureServerException, logServerError } from "./_core/monitoring";
 
 const ENDPOINT = "/api/v1/transactions/assess";
-const apiTransactionSchema = riskInputSchema.extend({
-  reference: z.string().trim().toUpperCase().regex(/^[A-Z0-9_-]{3,32}$/, "Reference must use 3-32 uppercase letters, numbers, underscores, or hyphens.").optional(),
-}).strict();
+const apiTransactionSchema = riskInputSchema
+  .extend({
+    reference: z
+      .string()
+      .trim()
+      .toUpperCase()
+      .regex(
+        /^[A-Z0-9_-]{3,32}$/,
+        "Reference must use 3-32 uppercase letters, numbers, underscores, or hyphens."
+      )
+      .optional(),
+  })
+  .strict();
 
-type ApiErrorCode = "invalid_request" | "unauthorized" | "forbidden" | "rate_limited" | "conflict" | "internal_error" | "payload_too_large";
+type ApiErrorCode =
+  | "invalid_request"
+  | "unauthorized"
+  | "forbidden"
+  | "rate_limited"
+  | "conflict"
+  | "internal_error"
+  | "payload_too_large";
 
 function requestId(): string {
   return `req_${crypto.randomUUID().replace(/-/g, "")}`;
 }
 
-function respondError(response: Response, status: number, code: ApiErrorCode, message: string, id: string) {
+function respondError(
+  response: Response,
+  status: number,
+  code: ApiErrorCode,
+  message: string,
+  id: string
+) {
   response.status(status).json({ error: { code, message, requestId: id } });
 }
 
@@ -38,58 +74,136 @@ async function logRequest(input: {
   } catch (error) {
     // Request logging is intentionally non-blocking: a transient telemetry failure must not create duplicate client retries.
     console.error("[FraudLens] Public API request log failed", error);
-    captureServerException(error, { area: "public_api", operation: "record_request_log", requestId: input.requestId });
-    logServerError("Public API request log failed", { area: "public_api", operation: "record_request_log" });
+    captureServerException(error, {
+      area: "public_api",
+      operation: "record_request_log",
+      requestId: input.requestId,
+    });
+    logServerError("Public API request log failed", {
+      area: "public_api",
+      operation: "record_request_log",
+    });
   }
 }
 
-async function handleTransactionAssessment(request: Request, response: Response) {
+async function handleTransactionAssessment(
+  request: Request,
+  response: Response
+) {
   const id = requestId();
   const rawLength = Number(request.header("content-length") ?? 0);
   if (Number.isFinite(rawLength) && rawLength > 20_000) {
-    respondError(response, 413, "payload_too_large", "Request bodies must be smaller than 20 KB.", id);
+    respondError(
+      response,
+      413,
+      "payload_too_large",
+      "Request bodies must be smaller than 20 KB.",
+      id
+    );
     return;
   }
 
   const secret = extractBearerApiKey(request.header("authorization"));
   if (!secret) {
-    respondError(response, 401, "unauthorized", "Provide a valid Bearer API key.", id);
+    respondError(
+      response,
+      401,
+      "unauthorized",
+      "Provide a valid Bearer API key.",
+      id
+    );
     return;
   }
 
   const apiKey = await getApiKeyByHash(hashApiKey(secret));
   if (!apiKey || !isApiKeyActive(apiKey.revokedAt, apiKey.expiresAt)) {
-    respondError(response, 401, "unauthorized", "The API key is invalid, expired, or revoked.", id);
+    respondError(
+      response,
+      401,
+      "unauthorized",
+      "The API key is invalid, expired, or revoked.",
+      id
+    );
     return;
   }
 
   if (!parseApiKeyScopes(apiKey.scopesJson).includes(PUBLIC_API_KEY_SCOPE)) {
-    await logRequest({ orgId: apiKey.orgId, apiKeyId: apiKey.id, requestId: id, responseStatus: 403 });
-    respondError(response, 403, "forbidden", "This API key does not include the transactions:write scope.", id);
+    await logRequest({
+      orgId: apiKey.orgId,
+      apiKeyId: apiKey.id,
+      requestId: id,
+      responseStatus: 403,
+    });
+    respondError(
+      response,
+      403,
+      "forbidden",
+      "This API key does not include the transactions:write scope.",
+      id
+    );
     return;
   }
 
-  const recentRequests = await countApiRequestsSince(apiKey.id, new Date(Date.now() - 60_000));
+  const recentRequests = await countApiRequestsSince(
+    apiKey.id,
+    new Date(Date.now() - 60_000)
+  );
   if (recentRequests >= PUBLIC_API_RATE_LIMIT_PER_MINUTE) {
-    await logRequest({ orgId: apiKey.orgId, apiKeyId: apiKey.id, requestId: id, responseStatus: 429 });
+    await logRequest({
+      orgId: apiKey.orgId,
+      apiKeyId: apiKey.id,
+      requestId: id,
+      responseStatus: 429,
+    });
     response.setHeader("Retry-After", "60");
-    respondError(response, 429, "rate_limited", `Limit of ${PUBLIC_API_RATE_LIMIT_PER_MINUTE} requests per minute exceeded.`, id);
+    respondError(
+      response,
+      429,
+      "rate_limited",
+      `Limit of ${PUBLIC_API_RATE_LIMIT_PER_MINUTE} requests per minute exceeded.`,
+      id
+    );
     return;
   }
 
   const parsed = apiTransactionSchema.safeParse(request.body);
   if (!parsed.success) {
-    await logRequest({ orgId: apiKey.orgId, apiKeyId: apiKey.id, requestId: id, responseStatus: 400 });
-    respondError(response, 400, "invalid_request", "Request validation failed.", id);
+    await logRequest({
+      orgId: apiKey.orgId,
+      apiKeyId: apiKey.id,
+      requestId: id,
+      responseStatus: 400,
+    });
+    respondError(
+      response,
+      400,
+      "invalid_request",
+      "Request validation failed.",
+      id
+    );
     return;
   }
 
   const reference = parsed.data.reference;
   if (reference) {
-    const existingReferences = await getTransactionReferencesByOrganization(apiKey.orgId);
+    const existingReferences = await getTransactionReferencesByOrganization(
+      apiKey.orgId
+    );
     if (existingReferences.has(reference)) {
-      await logRequest({ orgId: apiKey.orgId, apiKeyId: apiKey.id, requestId: id, responseStatus: 409, transactionReference: reference });
-      respondError(response, 409, "conflict", "A transaction with this reference already exists in this organization.", id);
+      await logRequest({
+        orgId: apiKey.orgId,
+        apiKeyId: apiKey.id,
+        requestId: id,
+        responseStatus: 409,
+        transactionReference: reference,
+      });
+      respondError(
+        response,
+        409,
+        "conflict",
+        "A transaction with this reference already exists in this organization.",
+        id
+      );
       return;
     }
   }
@@ -98,8 +212,13 @@ async function handleTransactionAssessment(request: Request, response: Response)
     const record = await submitRiskAssessment(
       apiKey.orgId,
       parsed.data as RiskInput,
-      { id: null, name: `Public API key ${apiKey.keyPrefix}`, source: "public_api", apiKeyId: apiKey.id },
-      reference,
+      {
+        id: null,
+        name: `Public API key ${apiKey.keyPrefix}`,
+        source: "public_api",
+        apiKeyId: apiKey.id,
+      },
+      reference
     );
     await Promise.all([
       touchApiKeyLastUsed(apiKey.id),
@@ -125,11 +244,33 @@ async function handleTransactionAssessment(request: Request, response: Response)
       },
     });
   } catch (error) {
-    console.error("[FraudLens] Public API transaction assessment failed", error);
-    captureServerException(error, { area: "public_api", operation: "assess_transaction", requestId: id });
-    logServerError("Public API transaction assessment failed", { area: "public_api", operation: "assess_transaction" });
-    await logRequest({ orgId: apiKey.orgId, apiKeyId: apiKey.id, requestId: id, responseStatus: 500, transactionReference: reference ?? null });
-    respondError(response, 500, "internal_error", "The transaction could not be assessed. Retry with the same reference after a short delay.", id);
+    console.error(
+      "[FraudLens] Public API transaction assessment failed",
+      error
+    );
+    captureServerException(error, {
+      area: "public_api",
+      operation: "assess_transaction",
+      requestId: id,
+    });
+    logServerError("Public API transaction assessment failed", {
+      area: "public_api",
+      operation: "assess_transaction",
+    });
+    await logRequest({
+      orgId: apiKey.orgId,
+      apiKeyId: apiKey.id,
+      requestId: id,
+      responseStatus: 500,
+      transactionReference: reference ?? null,
+    });
+    respondError(
+      response,
+      500,
+      "internal_error",
+      "The transaction could not be assessed. Retry with the same reference after a short delay.",
+      id
+    );
   }
 }
 
@@ -139,14 +280,17 @@ export function registerPublicApiRoutes(app: Express) {
       name: "FraudLens Public API",
       version: "v1",
       documentation: "/api/v1/docs",
-      endpoints: [{ method: "POST", path: ENDPOINT, requiredScope: PUBLIC_API_KEY_SCOPE }],
+      endpoints: [
+        { method: "POST", path: ENDPOINT, requiredScope: PUBLIC_API_KEY_SCOPE },
+      ],
     });
   });
 
   app.get("/api/v1/docs", (_request, response) => {
     response.json({
       version: "v1",
-      authentication: "Send Authorization: Bearer fl_live_... with an active transactions:write API key.",
+      authentication:
+        "Send Authorization: Bearer fl_live_... with an active transactions:write API key.",
       rateLimit: `${PUBLIC_API_RATE_LIMIT_PER_MINUTE} requests per minute per API key`,
       endpoint: {
         method: "POST",
@@ -161,20 +305,42 @@ export function registerPublicApiRoutes(app: Express) {
           transactionHour: 2,
           recentTransactionCount: 5,
         },
-        responseFields: ["requestId", "transaction.reference", "transaction.riskLevel", "transaction.riskScore", "transaction.caseStatus", "transaction.casePriority"],
+        responseFields: [
+          "requestId",
+          "transaction.reference",
+          "transaction.riskLevel",
+          "transaction.riskScore",
+          "transaction.caseStatus",
+          "transaction.casePriority",
+        ],
       },
     });
   });
 
   app.post(ENDPOINT, (request, response) => {
-    void handleTransactionAssessment(request, response).catch((error: unknown) => {
-      console.error("[FraudLens] Public API infrastructure failure", error);
-      const id = requestId();
-      captureServerException(error, { area: "public_api", operation: "infrastructure", requestId: id });
-      logServerError("Public API infrastructure failure", { area: "public_api", operation: "infrastructure" });
-      if (!response.headersSent) {
-        respondError(response, 500, "internal_error", "The request could not be completed. Retry after a short delay.", id);
+    void handleTransactionAssessment(request, response).catch(
+      (error: unknown) => {
+        console.error("[FraudLens] Public API infrastructure failure", error);
+        const id = requestId();
+        captureServerException(error, {
+          area: "public_api",
+          operation: "infrastructure",
+          requestId: id,
+        });
+        logServerError("Public API infrastructure failure", {
+          area: "public_api",
+          operation: "infrastructure",
+        });
+        if (!response.headersSent) {
+          respondError(
+            response,
+            500,
+            "internal_error",
+            "The request could not be completed. Retry after a short delay.",
+            id
+          );
+        }
       }
-    });
+    );
   });
 }
