@@ -22,6 +22,30 @@ export const ENV = {
   resendFromEmail: process.env.RESEND_FROM_EMAIL ?? "onboarding@resend.dev",
 };
 
+/**
+ * Fails closed in production when the application cannot securely authenticate
+ * users or persist tenant data. Optional integrations retain their own
+ * graceful-degradation behavior.
+ */
+export function validateProductionEnvironment(
+  environment: NodeJS.ProcessEnv = process.env
+): void {
+  if (environment.NODE_ENV !== "production") return;
+
+  const required = [
+    "DATABASE_URL",
+    "CLERK_SECRET_KEY",
+    "VITE_CLERK_PUBLISHABLE_KEY",
+    "OWNER_OPEN_ID",
+  ];
+  const missing = required.filter(name => !environment[name]?.trim());
+  if (missing.length > 0) {
+    throw new Error(
+      `Production configuration is missing required variables: ${missing.join(", ")}`
+    );
+  }
+}
+
 export function resolveBootstrapRole(
   openId: string
 ): "analyst" | "manager" | "admin" {

@@ -8,5 +8,4 @@ This list contains only FraudLens work that remains to be implemented.
 
 ## Deployment, Reliability, and Engineering Quality
 
-- [ ] Add production hardening: secure environment-variable management, request-rate limiting, secure HTTP headers, audit-log retention rules, database backups, and a disaster-recovery runbook.
 - [ ] Document setup, deployment, team-role rules, API usage, alert configuration, and operational troubleshooting in the README and administrator guide.
