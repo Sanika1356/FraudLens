@@ -41,6 +41,10 @@ The model-health view displays a reproducible Logistic Regression baseline train
 
 The baseline uses robust scaling, class balancing, and a threshold selected on a separate calibration split. Current evaluation values shown in the application are **precision 0.398**, **recall 0.823**, **F1 0.537**, and **PR-AUC 0.607** on a 120,000-row sample containing 247 positive examples. These values are useful for demonstrating methodology and trade-offs; they are not a claim of production readiness.
 
+## Administrator documentation
+
+The consolidated [administrator guide](./docs/ADMINISTRATOR_GUIDE.md) covers local setup, environment variables, deployment, Clerk organization roles, investigator workflow, API keys and request examples, notification channels, weekly summaries, reporting, and troubleshooting. Use the [production operations runbook](./docs/OPERATIONS.md) for retention, backups, and disaster recovery.
+
 ## Local development
 
 ```bash
