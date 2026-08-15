@@ -4,7 +4,7 @@
 
 ## Operating baseline
 
-FraudLens is deployed as one Railway service with TiDB Cloud Starter as its managed database and Supabase Storage for private evidence. The application now starts fail-closed in production if its database or Clerk authentication variables are absent. It also applies security-focused HTTP headers, disables the Express fingerprint header, accepts only simple query strings, caps JSON and form payloads at **1 MB** by default, and limits `/api` traffic per client IP.
+FraudLens is deployed as one Railway service with TiDB Cloud Starter as its managed database and Supabase Storage for private evidence. The application now starts fail-closed in production if its database or Clerk authentication variables are absent. It also applies security-focused HTTP headers, disables the Express fingerprint header, accepts only simple query strings, caps JSON and form payloads at **1 MB** by default, and limits `/api` traffic per client IP [3].
 
 | Control                   |               Default | Operator action                                                                                                                          |
 | ------------------------- | --------------------: | ---------------------------------------------------------------------------------------------------------------------------------------- |
@@ -74,6 +74,10 @@ TiDB Cloud documents snapshot restore for Starter and Essential instances; point
 A recovery plan is credible only after it is tested. At least monthly, perform an isolated exercise from a recent logical export and record the result. Confirm that no production credentials or production evidence files are exposed to the exercise environment. Do not mark an exercise complete until the restored schema, core counts, application health endpoint, authentication path, and audit-history readability have all been checked.
 
 ## References
+
+1. [Back Up and Restore TiDB Cloud Starter or Essential Data][1]
+2. [Export Data from TiDB Cloud Starter or Essential][2]
+3. [Express Production Best Practices: Security][3]
 
 [1]: https://docs.pingcap.com/tidbcloud/backup-and-restore-serverless/ "Back Up and Restore TiDB Cloud Starter or Essential Data"
 [2]: https://docs.pingcap.com/tidbcloud/serverless-export/ "Export Data from TiDB Cloud Starter or Essential"

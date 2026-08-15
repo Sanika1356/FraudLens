@@ -25,41 +25,48 @@ On macOS or Linux, use `cp .env.example .env` instead of `Copy-Item`. The local 
 
 Populate `.env` using the variable table below. Keep `.env` local and never commit it. Use test or development Clerk keys during local development. `DATABASE_URL` must include the TLS options required by TiDB Cloud Serverless. The `pnpm db:push` command generates and applies Drizzle migrations; inspect migration changes before applying them to any shared environment.
 
-### Required environment variables
+### Required and feature-specific environment variables
 
-| Variable                     | Scope                         | Purpose                                                            |
-| ---------------------------- | ----------------------------- | ------------------------------------------------------------------ |
-| `VITE_CLERK_PUBLISHABLE_KEY` | Browser build                 | Clerk publishable key compiled into the React client.              |
-| `CLERK_PUBLISHABLE_KEY`      | Server                        | Clerk publishable key used by Express authentication middleware.   |
-| `CLERK_SECRET_KEY`           | Server-only                   | Clerk server secret. Never expose it through a `VITE_` variable.   |
-| `OWNER_OPEN_ID`              | Server                        | Clerk user ID bootstrapped as the initial FraudLens administrator. |
-| `DATABASE_URL`               | Server and migration commands | TiDB Cloud MySQL-compatible connection string with TLS parameters. |
-| `SUPABASE_URL`               | Server                        | Supabase project URL for private evidence storage.                 |
-| `SUPABASE_SERVICE_ROLE_KEY`  | Server-only                   | Supabase service-role credential for private evidence files.       |
-| `SUPABASE_STORAGE_BUCKET`    | Server                        | Private evidence bucket, normally `fraudlens-evidence`.            |
+The application validates four variables before accepting production traffic: `DATABASE_URL`, `CLERK_SECRET_KEY`, `VITE_CLERK_PUBLISHABLE_KEY`, and `OWNER_OPEN_ID`. `CLERK_PUBLISHABLE_KEY` should also be configured because the server authentication middleware uses it. Drizzle migration commands additionally require `DATABASE_URL`.
 
-The server requires `DATABASE_URL`, `CLERK_SECRET_KEY`, `VITE_CLERK_PUBLISHABLE_KEY`, and `OWNER_OPEN_ID` before accepting production traffic. `CLERK_PUBLISHABLE_KEY` should also be configured because the authentication middleware uses it. Supabase variables are required for evidence workflows; Resend, Sentry, and Slack or Teams alerting remain optional integrations.
+| Variable                     | Scope                                | Required when          | Purpose                                                            |
+| ---------------------------- | ------------------------------------ | ---------------------- | ------------------------------------------------------------------ |
+| `VITE_CLERK_PUBLISHABLE_KEY` | Browser build and production startup | Always                 | Clerk publishable key compiled into the React client.              |
+| `CLERK_PUBLISHABLE_KEY`      | Server                               | Authentication enabled | Clerk publishable key used by Express authentication middleware.   |
+| `CLERK_SECRET_KEY`           | Server-only and production startup   | Always                 | Clerk server secret. Never expose it through a `VITE_` variable.   |
+| `OWNER_OPEN_ID`              | Server and production startup        | Always                 | Clerk user ID bootstrapped as the initial FraudLens administrator. |
+| `DATABASE_URL`               | Server and migration commands        | Always                 | TiDB Cloud MySQL-compatible connection string with TLS parameters. |
+| `SUPABASE_URL`               | Server                               | Evidence storage       | Supabase project URL for private evidence storage.                 |
+| `SUPABASE_SERVICE_ROLE_KEY`  | Server-only                          | Evidence storage       | Supabase service-role credential for private evidence files.       |
+| `SUPABASE_STORAGE_BUCKET`    | Server                               | Evidence storage       | Private evidence bucket, normally `fraudlens-evidence`.            |
 
-### Optional environment variables
+The three `SUPABASE_*` values are not required for the server to start, but evidence upload and download features require them. Resend, Sentry, and Slack or Teams alerting are optional integrations. The environment variables you listed contain every baseline startup variable and every variable needed for the configured Sentry source-map workflow; only the optional manager, Resend sender, and rate-limit overrides are absent.
 
-| Variable                                                      | Purpose                                                                              |
-| ------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
-| `MANAGER_OPEN_IDS`                                            | Comma-separated Clerk user IDs that receive manager bootstrap access.                |
-| `RESEND_API_KEY`                                              | Enables email alerts and scheduled weekly summaries.                                 |
-| `RESEND_FROM_EMAIL`                                           | Verified Resend sender; omit for limited `onboarding@resend.dev` testing.            |
-| `TRUST_PROXY_HOPS`                                            | Number of trusted proxy hops; keep `1` for the Railway deployment.                   |
-| `API_RATE_LIMIT_WINDOW_MINUTES`                               | Global `/api` rate-limit window; default `15`.                                       |
-| `API_RATE_LIMIT_MAX`                                          | Global `/api` requests per IP per window; default `300`.                             |
-| `REQUEST_BODY_LIMIT_BYTES`                                    | JSON/form body limit; default `1,000,000`. Keep evidence uploads on private storage. |
-| `VITE_SENTRY_DSN`, `SENTRY_DSN`                               | Optional browser and server Sentry destinations.                                     |
-| `VITE_SENTRY_ENVIRONMENT`, `SENTRY_ENVIRONMENT`               | Monitoring environment label, normally `production`.                                 |
-| `VITE_SENTRY_TRACES_SAMPLE_RATE`, `SENTRY_TRACES_SAMPLE_RATE` | Trace sample rates between `0` and `1`; production defaults to `0.1`.                |
+### Optional runtime and build variables
 
-The complete variable examples are maintained in [`.env.example`](../.env.example). Never paste secret values into issues, pull requests, chat, screenshots, or the repository.
+| Variable                                                       | Scope                     | Purpose                                                                                               |
+| -------------------------------------------------------------- | ------------------------- | ----------------------------------------------------------------------------------------------------- |
+| `MANAGER_OPEN_IDS`                                             | Server                    | Comma-separated Clerk user IDs that receive manager bootstrap access.                                 |
+| `RESEND_API_KEY`                                               | Server and GitHub Actions | Enables email alerts and scheduled weekly summaries.                                                  |
+| `RESEND_FROM_EMAIL`                                            | Server and GitHub Actions | Optional verified Resend sender. Omit it to use the limited `onboarding@resend.dev` testing behavior. |
+| `TRUST_PROXY_HOPS`                                             | Server                    | Trusted proxy-hop count; defaults to `1` for Railway.                                                 |
+| `API_RATE_LIMIT_WINDOW_MINUTES`                                | Server                    | Global `/api` rate-limit window; defaults to `15`.                                                    |
+| `API_RATE_LIMIT_MAX`                                           | Server                    | Global `/api` requests per IP per window; defaults to `300`.                                          |
+| `REQUEST_BODY_LIMIT_BYTES`                                     | Server                    | JSON/form body limit; defaults to `1,000,000` bytes.                                                  |
+| `VITE_SENTRY_DSN`                                              | Browser runtime           | Optional browser Sentry destination.                                                                  |
+| `SENTRY_DSN`                                                   | Server runtime            | Optional server Sentry destination.                                                                   |
+| `VITE_SENTRY_ENVIRONMENT` / `SENTRY_ENVIRONMENT`               | Browser/server runtime    | Optional monitoring environment label, normally `production`.                                         |
+| `VITE_SENTRY_TRACES_SAMPLE_RATE` / `SENTRY_TRACES_SAMPLE_RATE` | Browser/server runtime    | Optional trace sample rates between `0` and `1`; production defaults to `0.1`.                        |
+| `VITE_SENTRY_RELEASE` / `SENTRY_RELEASE`                       | Browser/server runtime    | Optional release identifier used to correlate events with a deployment.                               |
+| `SENTRY_AUTH_TOKEN`                                            | Build-only secret         | Optional Sentry source-map upload token. Never expose it through a `VITE_` variable.                  |
+| `SENTRY_ORG`                                                   | Build-only                | Sentry organization slug used for source-map upload.                                                  |
+| `SENTRY_PROJECT`                                               | Build-only                | Sentry project slug used for source-map upload.                                                       |
+
+The complete safe examples are maintained in [`.env.example`](../.env.example). Never paste secret values into issues, pull requests, chat, screenshots, or the repository.
 
 ## Workspace access and roles
 
-A user must be authenticated with Clerk and must select an active Clerk organization before accessing workspace data. Every organization-scoped query is filtered by the active organization ID. A user’s FraudLens role and Clerk organization membership role are separate controls; administrator operations require both FraudLens administrator access and Clerk organization administrator membership.
+A user must be authenticated with [Clerk][1] and must select an active Clerk organization before accessing workspace data. Every organization-scoped query is filtered by the active organization ID. A user’s FraudLens role and Clerk organization membership role are separate controls; administrator operations require both FraudLens administrator access and Clerk organization administrator membership.
 
 | Role          | Primary responsibilities                                                 | Main access                                                                                                                                                                                                  |
 | ------------- | ------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
@@ -77,17 +84,17 @@ Administrators can open the workspace directory to invite members, change a memb
 
 Analysts start in the Command Center, review the priority queue, and open a transaction detail view to inspect the deterministic score, factors, case status, notes, tags, assignment, priority, and due date. A risk label supports review; it is not a final decision. Record a concise case note and a resolution reason when marking a case as confirmed fraud or legitimate. Keep the evidence trail factual and avoid copying unnecessary personal data into notes.
 
-Managers can assign cases, set priorities and due dates, claim unassigned work, inspect workload distribution, import transaction CSVs, and review operational reports. CSV import validates the schema and risk inputs before persistence; test an import with a small synthetic file before using a larger batch. Evidence uploads use private Supabase storage and organization-scoped storage keys. Never make the evidence bucket public or place service-role credentials in browser code.
+Managers can assign cases, set priorities and due dates, claim unassigned work, inspect workload distribution, import transaction CSVs, and review operational reports. CSV import validates the schema and risk inputs before persistence; test an import with a small synthetic file before using a larger batch. Evidence uploads use private Supabase storage and organization-scoped storage keys [4]. Never make the evidence bucket public or place service-role credentials in browser code.
 
 ## Alert configuration
 
 Open **Notification Preferences** as a manager or administrator. Configure the risk threshold and enable any supported delivery channel only after its recipient or webhook has been supplied. The application validates Slack incoming-webhook URLs and Teams or Power Automate workflow URLs before saving them.
 
-| Channel         | Configuration                                                                                                            | Operational notes                                                                                                                         |
-| --------------- | ------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------- |
-| Email           | Enable email and enter a recipient. Configure `RESEND_API_KEY`; use `RESEND_FROM_EMAIL` only after verifying the sender. | Resend’s limited testing sender may restrict recipients. Start with the Resend account email and confirm delivery before broader testing. |
-| Slack           | Enable Slack and enter the organization’s approved incoming webhook URL.                                                 | Treat the webhook like a secret. Rotate it in Slack if it is exposed.                                                                     |
-| Microsoft Teams | Enable Teams and enter the approved Teams or Power Automate workflow URL.                                                | Treat the workflow URL like a secret and rotate it when necessary.                                                                        |
+| Channel         | Configuration                                                                                                            | Operational notes                                                                                                                             |
+| --------------- | ------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| Email           | Enable email and enter a recipient. Configure `RESEND_API_KEY`; use `RESEND_FROM_EMAIL` only after verifying the sender. | Resend’s limited testing sender may restrict recipients [3]. Start with the Resend account email and confirm delivery before broader testing. |
+| Slack           | Enable Slack and enter the organization’s approved incoming webhook URL.                                                 | Treat the webhook like a secret. Rotate it in Slack if it is exposed.                                                                         |
+| Microsoft Teams | Enable Teams and enter the approved Teams or Power Automate workflow URL.                                                | Treat the workflow URL like a secret and rotate it when necessary.                                                                            |
 
 Use the manager-only **Test Alert** action after saving preferences. The test uses a synthetic high-risk transaction and does not send real transaction data. Inspect the audit event and the provider response when diagnosing delivery. Alert delivery is resilient: a provider failure is logged and does not prevent the risk decision from being stored.
 
@@ -95,7 +102,7 @@ Use the manager-only **Test Alert** action after saving preferences. The test us
 
 Open **Weekly Summaries** as a manager or administrator, enable the schedule, and provide a valid recipient email. The GitHub Actions workflow sends the previous completed calendar week’s operational risk summary every Monday at 08:00 UTC. It is idempotent, so a retry does not intentionally duplicate a delivery for the same organization and week.
 
-The scheduled workflow requires the repository secrets `DATABASE_URL` and `RESEND_API_KEY`; `RESEND_FROM_EMAIL` is optional. Add them under **GitHub → Settings → Secrets and variables → Actions** without placing the values in source control. Run the workflow manually from the Actions page after configuration, then verify the delivery record and recipient inbox. Keep the GitHub Actions spending limit at zero when the no-cost safeguard is required.
+The scheduled workflow requires the repository secrets `DATABASE_URL` and `RESEND_API_KEY`; `RESEND_FROM_EMAIL` is optional. Add them under **GitHub → Settings → Secrets and variables → Actions** without placing the values in source control [5]. Run the workflow manually from the Actions page after configuration, then verify the delivery record and recipient inbox. Keep the GitHub Actions spending limit at zero when the no-cost safeguard is required.
 
 ## Public transaction API
 
@@ -136,7 +143,7 @@ Managers can inspect audit events and public API request logs for the active org
 
 ## Deployment to Railway
 
-Deploy the `main` branch from the GitHub repository using the checked-in [`railway.toml`](../railway.toml). Configure the required variables in Railway’s service-variable manager, deploy, and verify `GET /health` returns HTTP 200 with `{"status":"ok"}`. Then configure Clerk allowed origins and redirect URLs for the generated Railway domain before testing sign-in.
+Deploy the `main` branch from the GitHub repository using the checked-in [`railway.toml`](../railway.toml). Configure the required variables in Railway’s service-variable manager, deploy, and verify `GET /health` returns HTTP 200 with `{"status":"ok"}` [2]. Then configure Clerk allowed origins and redirect URLs for the generated Railway domain before testing sign-in.
 
 The deployment runs the production build, applies committed Drizzle migrations before startup, and uses the Railway-assigned `PORT`. Do not run migrations manually against production unless the change window and backup/export procedure have been approved. Review [Railway deployment guidance in the README](../README.md#deploying-on-railway) and the [operations runbook](./OPERATIONS.md) for health checks, cost safeguards, backup limitations, and recovery.
 
@@ -160,6 +167,12 @@ The deployment runs the production build, applies committed Drizzle migrations b
 For suspected data loss, corruption, credential exposure, or unauthorized access, stop unreviewed changes and follow the [disaster-recovery procedure](./OPERATIONS.md#disaster-recovery-runbook). Preserve relevant logs and snapshots before attempting a restore.
 
 ## References
+
+1. [Clerk documentation][1]
+2. [Railway health checks][2]
+3. [Resend documentation][3]
+4. [Supabase Storage documentation][4]
+5. [GitHub Actions security hardening][5]
 
 [1]: https://clerk.com/docs "Clerk documentation"
 [2]: https://docs.railway.com/deployments/healthchecks "Railway health checks"
