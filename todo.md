@@ -8,4 +8,3 @@ This list contains only FraudLens work that remains to be implemented.
 
 ## Deployment, Reliability, and Engineering Quality
 
-- [ ] Document setup, deployment, team-role rules, API usage, alert configuration, and operational troubleshooting in the README and administrator guide.
