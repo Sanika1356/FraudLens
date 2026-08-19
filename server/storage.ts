@@ -41,6 +41,25 @@ export function isSupabaseStorageConfigured(): boolean {
   );
 }
 
+/**
+ * Performs a metadata-only Storage request for the configured evidence bucket.
+ * This is suitable for scheduled health checks and never reads or writes evidence objects.
+ */
+export async function storageCheckBucket(): Promise<void> {
+  const config = getSupabaseConfig();
+  const response = await fetch(
+    `${config.url}/storage/v1/bucket/${encodeURIComponent(config.bucket)}`,
+    { method: "GET", headers: headers(config) }
+  );
+
+  if (!response.ok) {
+    // Do not emit the response body: provider error payloads can include operational detail.
+    throw new Error(
+      `Supabase Storage health check failed with status ${response.status}.`
+    );
+  }
+}
+
 function normalizeKey(relKey: string): string {
   const key = relKey.replace(/^\/+/, "").replace(/\\/g, "/");
   if (

@@ -12,6 +12,7 @@
     "format:check": "prettier --check .",
     "test": "vitest run",
     "weekly:send": "tsx scripts/send-weekly-summary.ts",
+    "storage:keepalive": "tsx scripts/check-supabase-storage.ts",
     "db:push": "drizzle-kit generate && drizzle-kit migrate"
   },
   "dependencies": {
