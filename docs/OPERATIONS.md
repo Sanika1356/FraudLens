@@ -16,6 +16,20 @@ FraudLens is deployed as one Railway service with TiDB Cloud Starter as its mana
 
 The HTTP rate limiter is intentionally an in-memory control, which is appropriate for the current single Railway service. It does not coordinate counters across multiple running instances. Before horizontally scaling the service, replace it with a shared rate-limit store and repeat load and abuse testing.
 
+## Scheduled Supabase evidence-storage health check
+
+The repository workflow `.github/workflows/supabase-storage-keepalive.yml` runs every third day at 06:23 UTC and may also be started manually from the Actions page. It performs a metadata-only `GET` request for the configured private evidence bucket. The check neither lists, downloads, uploads, nor deletes evidence files. Its purpose is to confirm that the storage integration remains reachable and to provide regular project activity; it is an operational best effort rather than a provider guarantee against free-plan pausing.[4]
+
+Create the following **repository secrets** in GitHub under **Settings → Secrets and variables → Actions**. Copy the existing production values from the secure environment where FraudLens is configured; never place any value in source code, workflow YAML, a ticket, or a chat message.
+
+| Secret name                 | Source                             | Required value                                                                         |
+| --------------------------- | ---------------------------------- | -------------------------------------------------------------------------------------- |
+| `SUPABASE_URL`              | Supabase project settings          | The project URL only, without a trailing slash.                                        |
+| `SUPABASE_SERVICE_ROLE_KEY` | Supabase project API-key settings  | The existing server-side key. It must remain encrypted in the repository secret store. |
+| `SUPABASE_STORAGE_BUCKET`   | FraudLens production configuration | The private evidence-bucket identifier, normally `fraudlens-evidence`.                 |
+
+After adding all three secrets, run **Check Supabase evidence storage** manually from the Actions page once. A successful run logs only a generic success message. If it fails, verify that the names and values were copied correctly and that the bucket still exists; do not paste the key into logs or issue comments. Supabase treats secret and service-role keys as elevated credentials and requires that they remain in secure server-side environments.[5]
+
 ## Secure deployment procedure
 
 Configure only production values in Railway’s service-variable manager. Never commit `.env`, connection strings, API keys, Supabase service-role keys, Clerk secret keys, or Sentry tokens. Railway must provide `DATABASE_URL`, `CLERK_SECRET_KEY`, `VITE_CLERK_PUBLISHABLE_KEY`, and `OWNER_OPEN_ID`; the application refuses to start in production when any one is missing. The remaining configured integrations, such as Supabase evidence storage, Resend, and Sentry, retain their documented graceful-degradation behavior.
@@ -78,7 +92,11 @@ A recovery plan is credible only after it is tested. At least monthly, perform a
 1. [Back Up and Restore TiDB Cloud Starter or Essential Data][1]
 2. [Export Data from TiDB Cloud Starter or Essential][2]
 3. [Express Production Best Practices: Security][3]
+4. [Supabase Pricing][4]
+5. [Supabase API Keys][5]
 
 [1]: https://docs.pingcap.com/tidbcloud/backup-and-restore-serverless/ "Back Up and Restore TiDB Cloud Starter or Essential Data"
-[2]: https://docs.pingcap.com/tidbcloud/serverless-export/ "Export Data from TiDB Cloud Starter or Essential"
+[2]: https://docs.pingcap.com/tidbcloud/serverless-export/ "Export Data from TiDB Cloud Starter or Essential Data"
 [3]: https://expressjs.com/en/advanced/best-practice-security.html "Production Best Practices: Security"
+[4]: https://supabase.com/pricing "Supabase Pricing"
+[5]: https://supabase.com/docs/guides/getting-started/api-keys "Supabase API Keys"
