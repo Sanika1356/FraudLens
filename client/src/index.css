@@ -183,6 +183,9 @@ html:not(.dark) [class*="bg-[#07111e]"],
 html:not(.dark) [class*="bg-[#081521]"] {
   background-color: var(--background) !important;
 }
+html:not(.dark) [class*="bg-[#0c1a28]"] {
+  background-color: var(--card) !important;
+}
 html:not(.dark) [class~="bg-slate-950/70"] {
   background-color: var(--card) !important;
 }
