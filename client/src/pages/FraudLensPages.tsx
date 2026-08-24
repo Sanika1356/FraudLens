@@ -230,9 +230,7 @@ function Panel({
   className?: string;
 }) {
   return (
-    <Card
-      className={`border-white/[0.075] bg-[#0c1a28] shadow-none ${className}`}
-    >
+    <Card className={`border-border bg-card shadow-none ${className}`}>
       <CardContent className="p-5">{children}</CardContent>
     </Card>
   );
