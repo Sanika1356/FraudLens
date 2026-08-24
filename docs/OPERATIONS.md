@@ -34,6 +34,10 @@ After adding all three secrets, run **Check Supabase evidence storage** manually
 
 Configure only production values in Railway’s service-variable manager. Never commit `.env`, connection strings, API keys, Supabase service-role keys, Clerk secret keys, or Sentry tokens. Railway must provide `DATABASE_URL`, `CLERK_SECRET_KEY`, `VITE_CLERK_PUBLISHABLE_KEY`, and `OWNER_OPEN_ID`; the application refuses to start in production when any one is missing. The remaining configured integrations, such as Supabase evidence storage, Resend, and Sentry, retain their documented graceful-degradation behavior.
 
+### TiDB migration recovery
+
+If Railway stops during the pre-deploy migration, inspect the first SQL error before retrying. TiDB requires supported expressions rather than literal defaults for `TEXT`, `BLOB`, and `JSON` columns [6]. The repository migrations therefore avoid parenthesized literal JSON defaults and use resumable DDL for the affected release. After a failed attempt, confirm the latest migration was not recorded as complete, review whether earlier DDL statements were applied, and redeploy the corrected commit. Do not manually run destructive rollback SQL against production without an approved backup and change window.
+
 | Verification                                       | Expected result                                                 | Response if it fails                                                                          |
 | -------------------------------------------------- | --------------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
 | `GET /health`                                      | `200` and `{"status":"ok"}`                                     | Inspect Railway deployment logs before routing users to the release.                          |
@@ -94,9 +98,11 @@ A recovery plan is credible only after it is tested. At least monthly, perform a
 3. [Express Production Best Practices: Security][3]
 4. [Supabase Pricing][4]
 5. [Supabase API Keys][5]
+6. [TiDB Default Values][6]
 
 [1]: https://docs.pingcap.com/tidbcloud/backup-and-restore-serverless/ "Back Up and Restore TiDB Cloud Starter or Essential Data"
 [2]: https://docs.pingcap.com/tidbcloud/serverless-export/ "Export Data from TiDB Cloud Starter or Essential Data"
 [3]: https://expressjs.com/en/advanced/best-practice-security.html "Production Best Practices: Security"
 [4]: https://supabase.com/pricing "Supabase Pricing"
 [5]: https://supabase.com/docs/guides/getting-started/api-keys "Supabase API Keys"
+[6]: https://docs.pingcap.com/tidb/stable/data-type-default-values/ "TiDB Default Values"

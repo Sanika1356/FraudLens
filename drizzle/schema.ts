@@ -151,7 +151,7 @@ export const transactions = mysqlTable(
     riskProbability: int("riskProbability").notNull(),
     factorJson: text("factorJson").notNull(),
     /** Derived operational signals; these do not change the authoritative model score. */
-    policySignalJson: text("policySignalJson").notNull().default("[]"),
+    policySignalJson: text("policySignalJson").notNull(),
     /** Version of the approved policy used when this assessment was created. */
     policyVersion: varchar("policyVersion", { length: 32 })
       .notNull()
@@ -496,7 +496,7 @@ export const transactionImportBatches = mysqlTable(
     importedRows: int("importedRows").default(0).notNull(),
     invalidRows: int("invalidRows").default(0).notNull(),
     duplicateRows: int("duplicateRows").default(0).notNull(),
-    errorsJson: text("errorsJson").notNull().default("[]"),
+    errorsJson: text("errorsJson").notNull(),
     createdById: varchar("createdById", { length: 64 }),
     createdByName: varchar("createdByName", { length: 160 }),
     createdAt: timestamp("createdAt").defaultNow().notNull(),

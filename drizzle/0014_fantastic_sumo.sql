@@ -1,4 +1,4 @@
-CREATE TABLE `riskEntities` (
+CREATE TABLE IF NOT EXISTS `riskEntities` (
 	`id` int AUTO_INCREMENT NOT NULL,
 	`orgId` varchar(64) NOT NULL,
 	`entityType` enum('merchant_category','country_route','device_cohort') NOT NULL,
@@ -9,7 +9,7 @@ CREATE TABLE `riskEntities` (
 	CONSTRAINT `risk_entities_org_type_key_unique` UNIQUE(`orgId`,`entityType`,`entityKey`)
 );
 --> statement-breakpoint
-CREATE TABLE `transactionEntityLinks` (
+CREATE TABLE IF NOT EXISTS `transactionEntityLinks` (
 	`id` int AUTO_INCREMENT NOT NULL,
 	`orgId` varchar(64) NOT NULL,
 	`transactionId` int NOT NULL,
@@ -20,6 +20,6 @@ CREATE TABLE `transactionEntityLinks` (
 	CONSTRAINT `transaction_entity_links_unique` UNIQUE(`orgId`,`transactionId`,`entityId`)
 );
 --> statement-breakpoint
-ALTER TABLE `transactions` ADD `policySignalJson` text DEFAULT ('[]') NOT NULL;--> statement-breakpoint
-CREATE INDEX `risk_entities_org_idx` ON `riskEntities` (`orgId`);--> statement-breakpoint
-CREATE INDEX `transaction_entity_links_org_entity_idx` ON `transactionEntityLinks` (`orgId`,`entityId`);
+ALTER TABLE `transactions` ADD COLUMN IF NOT EXISTS `policySignalJson` text NOT NULL;--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS `risk_entities_org_idx` ON `riskEntities` (`orgId`);--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS `transaction_entity_links_org_entity_idx` ON `transactionEntityLinks` (`orgId`,`entityId`);
