@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import {
   completeApiIdempotency,
@@ -442,6 +443,26 @@ describe("FraudLens operational roadmap foundations", () => {
       version: "fraudlens-lr-0.2",
       status: "champion",
     });
+  });
+
+  it("keeps TiDB migrations free of literal TEXT JSON defaults and resumable", () => {
+    const migration014 = readFileSync(
+      new URL("../drizzle/0014_fantastic_sumo.sql", import.meta.url),
+      "utf8"
+    );
+    const migration015 = readFileSync(
+      new URL("../drizzle/0015_curvy_mentor.sql", import.meta.url),
+      "utf8"
+    );
+
+    expect(`${migration014}\n${migration015}`).not.toMatch(
+      /text\s+(?:NOT NULL\s+)?DEFAULT\s*\('\[\]'\)/i
+    );
+    expect(migration014).toContain("CREATE TABLE IF NOT EXISTS");
+    expect(migration014).toContain("ADD COLUMN IF NOT EXISTS");
+    expect(migration014).toContain("CREATE INDEX IF NOT EXISTS");
+    expect(migration015).toContain("CREATE TABLE IF NOT EXISTS");
+    expect(migration015).toContain("CREATE INDEX IF NOT EXISTS");
   });
 
   it("replays a completed idempotent response for the same API key and key", async () => {
