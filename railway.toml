@@ -3,7 +3,7 @@ builder = "RAILPACK"
 buildCommand = "pnpm install --frozen-lockfile && pnpm build"
 
 [deploy]
-preDeployCommand = ["pnpm drizzle-kit migrate"]
+preDeployCommand = ["pnpm exec drizzle-kit migrate"]
 startCommand = "pnpm start"
 healthcheckPath = "/health"
 healthcheckTimeout = 120
