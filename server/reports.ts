@@ -1,6 +1,9 @@
 import type { RiskRecord } from "./demoData";
 import type { OutcomeFeedbackRecord } from "./db";
 
+export const MAX_REPORT_EXPORT_ROWS = 1000;
+export const DEFAULT_REPORT_EXPORT_ROWS = 500;
+
 export type ReportRiskLevel = RiskRecord["riskLevel"];
 export type ReportCaseStatus = RiskRecord["caseStatus"];
 
@@ -114,7 +117,8 @@ export function buildOperationalReport(
   records: RiskRecord[],
   feedback: OutcomeFeedbackRecord[],
   filters: ReportFilters = {},
-  generatedAt = new Date()
+  generatedAt = new Date(),
+  rowLimit = Number.MAX_SAFE_INTEGER
 ): OperationalReport {
   const feedbackByTransaction = new Map(
     feedback.map(item => [item.transactionId, item])
@@ -123,7 +127,8 @@ export function buildOperationalReport(
     .filter(record => matchesFilters(record, filters))
     .sort(
       (first, second) => second.createdAt.getTime() - first.createdAt.getTime()
-    );
+    )
+    .slice(0, Math.max(1, Math.floor(rowLimit)));
 
   const rows = selected.map((record): ReportRow => {
     const outcome = feedbackByTransaction.get(record.id);

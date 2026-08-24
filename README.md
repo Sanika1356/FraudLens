@@ -55,7 +55,7 @@ pnpm dev
 
 Before starting the application, add your Clerk publishable key and secret key to the local `.env` file. Set both `VITE_CLERK_PUBLISHABLE_KEY` and `CLERK_PUBLISHABLE_KEY` to the publishable key; the former is used by the React client and the latter by the Express middleware. Set `CLERK_SECRET_KEY` only on the server. The `.env` file is ignored by Git and must never be committed. The `pnpm dev` command works unchanged in Windows PowerShell, macOS, and Linux.
 
-Authentication is required for every FraudLens workspace route and risk-management API. Clerk provides sign-up, sign-in, password recovery, and any enabled social-login flow at `/sign-in` and `/sign-up`.
+Authentication is required for every FraudLens workspace route and risk-management API. Clerk provides sign-up, sign-in, password recovery, and any enabled social-login flow at `/sign-in` and `/sign-up`. FraudLens application roles are stored per Clerk organization in the `organizationRoles` table; the legacy global role field on `users` is not an authorization source.
 
 Run type validation and tests with:
 
@@ -112,7 +112,15 @@ After deployment, verify the Railway domain returns `{"status":"ok"}` at `/healt
 
 ## Production hardening and recovery
 
-FraudLens applies production-safe HTTP headers, removes the Express fingerprint header, uses bounded API request parsing, limits `/api` traffic by client IP, retains the existing per-key public API limit, and refuses production startup when its database or required Clerk variables are missing. The full [production operations runbook](./docs/OPERATIONS.md) explains the security variables, immutable audit-log handling, TiDB Cloud export procedure, and a tested restore-to-new-instance recovery process.
+FraudLens applies production-safe HTTP headers, removes the Express fingerprint header, uses bounded API request parsing, limits `/api` traffic by client IP, retains the existing per-key public API limit, scopes application roles to the active organization, and refuses production startup when its database or required Clerk variables are missing. The `0012_tranquil_retro_girl` migration creates the organization-role table; deploy it before relying on dashboard-managed role changes. The full [production operations runbook](./docs/OPERATIONS.md) explains the security variables, immutable audit-log handling, TiDB Cloud export procedure, and a tested restore-to-new-instance recovery process.
+
+The case queue now supports saved private or shared views, organization-scoped SLA states (`on track`, `due soon`, `overdue`, and `no deadline`), and richer event-type labels in the case activity timeline. Public API clients may send an `Idempotency-Key` header; an identical request replays its successful response for 24 hours, while a changed payload using the same key is rejected. The API integrations page also summarizes recent accepted, rejected, duplicate, and rate-limited attempts.
+
+Transaction detail now includes explainable related activity based on synthetic merchant-category, country-route, and device-cohort signals. Assessments also expose separate operational policy signals without changing the authoritative model score. Managers can use the Model Health threshold simulator to preview queue-volume and reviewed-outcome tradeoffs; it never changes the live threshold. The `0014_fantastic_sumo` migration creates the related-activity tables and persists policy signals.
+
+The Security Center provides manager-level visibility into masked API-key inventory, notification destination hostnames, recent security events, and the last recorded access review. Only a FraudLens administrator who is also a Clerk organization administrator can record an access review. The page intentionally reports provider-managed MFA/recovery and shared-rate-limit actions as deployment follow-ups rather than claiming they are enforced by application code.
+
+Transaction imports now use a preview-first workflow. Managers can inspect ready, invalid, and duplicate row counts plus sample risk outcomes before committing. The commit is bound to a SHA-256 hash of the previewed file, so changing the file after preview requires a new preview. Recent import batches are retained as organization-scoped metadata without storing raw CSV contents. Migration `0015_curvy_mentor` creates the import-batch table.
 
 > **Operational and compliance note:** These controls reduce common deployment risk, but do not by themselves make a demonstration application suitable for regulated or real-customer data. Retention and preservation requirements require approval from the organization’s legal or compliance reviewer.
 
@@ -162,6 +170,34 @@ The workflow has read-only repository permissions, uses the committed pnpm lockf
 To make CI a mandatory release gate, open the repository’s **Settings → Rules → Rulesets** (or **Branches** for legacy branch protection), create a rule for `main`, enable required status checks, and select **Format, type check, test, and build**. GitHub documents that required status checks must complete successfully, be skipped, or be neutral before a protected branch can be changed.[^github-protection]
 
 [^github-protection]: [GitHub: About protected branches](https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/managing-protected-branches/about-protected-branches)
+
+## Roadmap release 5: governed Policy Studio
+
+FraudLens now includes an organization-scoped **Policy Studio** at `/policy`. Managers can edit bounded score, amount, velocity, and operational-signal thresholds, run a read-only preview against synthetic cases, and create a draft with a required change note. Activation and rollback are server-enforced operations requiring both the FraudLens administrator role and `org:admin` membership in the active Clerk organization.
+
+Policy changes apply only to future assessments; historic transactions retain their stored `policyVersion`, and no policy automatically blocks an account or closes a case. Every draft, approval, and rollback is recorded in the organization-scoped audit history. Migration `0016_cultured_wind_dancer.sql` creates the version table and adds the transaction policy-version field. Apply it through the approved staging/production migration process; it has not been applied by this sandbox. See [`ROADMAP_RELEASE_5.md`](ROADMAP_RELEASE_5.md) for the workflow, security boundary, validation, and verification details.
+
+## Roadmap release 6: guided review checklist
+
+Transaction detail pages now include a **Guided review checklist** for identity and account context, device/access context, merchant/payment context, related activity, and evidence quality. Investigators can complete or reopen items and save bounded notes; updates remain separate from the final case outcome and are written to the organization-scoped audit stream.
+
+The checklist is advisory and human-in-the-loop. It does not make fraud decisions, automatically close cases, or treat related activity as proof. Migration `0017_slippery_the_call.sql` creates the organization-scoped checklist table. It was generated and inspected locally but has not been applied to production; apply it through the approved staging and production migration process. See [`ROADMAP_RELEASE_6.md`](ROADMAP_RELEASE_6.md) and [`docs/ADMINISTRATOR_GUIDE.md`](docs/ADMINISTRATOR_GUIDE.md) for operating details.
+
+## Roadmap release 7: secure investigator exports
+
+Operational CSV and summary downloads now require a concise export reason and a server-enforced row limit between 1 and 1,000. Export audit events retain the active organization, actor, filters, row count, requested limit, and bounded reason. Existing manager authorization, organization isolation, and formula-safe CSV escaping remain in effect. This release uses the existing audit infrastructure and requires no new migration. See [`ROADMAP_RELEASE_7.md`](ROADMAP_RELEASE_7.md) for the security boundary, workflow, validation, and residual risks.
+
+## Roadmap release 8: governed retention policies
+
+FraudLens now provides an organization-scoped **Retention Policies** workspace. Managers can preview and draft transaction, evidence, and audit-event retention windows; activation and rollback require both the FraudLens administrator role and `org:admin` membership in the active Clerk organization. This release records effective dates and governance events but intentionally performs no automatic deletion. Migration `0018_fat_pestilence.sql` creates the versioned retention-policy table and has not been applied by this sandbox. See [`ROADMAP_RELEASE_8.md`](ROADMAP_RELEASE_8.md) for operating guidance and residual risks.
+
+## Roadmap release 9: governed model registry
+
+FraudLens now includes an organization-scoped **Model Registry** for recording evaluated challengers and the human approval decision that promotes a challenger to champion. Managers can compare bounded aggregate precision, recall, F1, PR-AUC, threshold, and reviewed-row metadata before registration. Promotion and rollback require both the FraudLens administrator role and `org:admin` membership in the active Clerk organization. Registry promotion does not change the deterministic manual scoring engine in this release. Migration `0019_flashy_thundra.sql` creates the registry table and has not been applied by this sandbox. See [`ROADMAP_RELEASE_9.md`](ROADMAP_RELEASE_9.md) for governance boundaries and residual risks.
+
+## Roadmap release 10: incident mode
+
+FraudLens now includes an organization-scoped **Incident Mode** in Security Center. An organization administrator can pause server-side workspace mutations and public transaction ingestion with a required incident note while preserving read-only investigation and an administrator recovery path. Activation and deactivation are audited; API ingestion returns a retryable 503 response while the mode is active. Migration `0020_sad_thunderball.sql` creates the control table and has not been applied by this sandbox. See [`ROADMAP_RELEASE_10.md`](ROADMAP_RELEASE_10.md) for operating guidance and residual risks.
 
 ## Current limitations and next steps
 

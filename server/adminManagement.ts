@@ -1,8 +1,11 @@
 import { clerkClient } from "@clerk/express";
-import { eq, inArray } from "drizzle-orm";
-import { users, type User } from "../drizzle/schema";
-import { ENV } from "./_core/env";
-import { getDb, getUserByOpenId, upsertUser } from "./db";
+import type { User } from "../drizzle/schema";
+import { ENV, resolveBootstrapRole } from "./_core/env";
+import {
+  getOrganizationRolesByUsers,
+  getUserByOpenId,
+  setOrganizationRole,
+} from "./db";
 
 export const ORGANIZATION_MEMBERSHIP_ROLES = [
   "org:admin",
@@ -77,16 +80,6 @@ async function assertNotRemovingLastOrganizationAdministrator(
   }
 }
 
-async function getLocalUserRoles(userIds: string[]) {
-  const db = await getDb();
-  if (!db || userIds.length === 0) return new Map<string, User>();
-  const rows = await db
-    .select()
-    .from(users)
-    .where(inArray(users.openId, userIds));
-  return new Map(rows.map(user => [user.openId, user]));
-}
-
 export async function getWorkspaceDirectory(orgId: string) {
   const [memberships, invitations] = await Promise.all([
     clerkClient.organizations.getOrganizationMembershipList({
@@ -98,12 +91,11 @@ export async function getWorkspaceDirectory(orgId: string) {
       limit: 100,
     }),
   ]);
-  const localUsers = await getLocalUserRoles(
-    memberships.data.flatMap(membership => {
-      const userId = membership.publicUserData?.userId;
-      return userId ? [userId] : [];
-    })
-  );
+  const memberIds = memberships.data.flatMap(membership => {
+    const userId = membership.publicUserData?.userId;
+    return userId ? [userId] : [];
+  });
+  const organizationRoles = await getOrganizationRolesByUsers(orgId, memberIds);
 
   return {
     members: memberships.data.flatMap<WorkspaceMember>(membership => {
@@ -117,7 +109,9 @@ export async function getWorkspaceDirectory(orgId: string) {
           email: publicUser.identifier ?? null,
           imageUrl: publicUser.imageUrl ?? null,
           organizationRole: membership.role,
-          applicationRole: localUsers.get(publicUser.userId)?.role ?? "analyst",
+          applicationRole:
+            organizationRoles.get(publicUser.userId) ??
+            resolveBootstrapRole(publicUser.userId),
           joinedAt: new Date(membership.createdAt),
         },
       ];
@@ -190,24 +184,9 @@ export async function changeFraudLensRole(input: {
     clerkUser.emailAddresses.find(
       item => item.id === clerkUser.primaryEmailAddressId
     )?.emailAddress ?? null;
-  await upsertUser({
-    openId: clerkUser.id,
-    name: toDisplayName(clerkUser.firstName, clerkUser.lastName),
-    email,
-    loginMethod: "clerk",
-    role: input.role,
-  });
-
-  const db = await getDb();
-  if (!db)
-    throw new Error(
-      "A database connection is required to update FraudLens roles."
-    );
-  await db
-    .update(users)
-    .set({ role: input.role })
-    .where(eq(users.openId, input.userId));
-  return (await getUserByOpenId(input.userId)) ?? null;
+  await setOrganizationRole(input.orgId, input.userId, input.role);
+  const localUser = await getUserByOpenId(input.userId);
+  return localUser ? { ...localUser, role: input.role } : null;
 }
 
 export async function deactivateOrganizationMember(input: {

@@ -22,6 +22,8 @@ import {
   ArrowLeft,
   ArrowRight,
   BellRing,
+  Bookmark,
+  BookmarkPlus,
   Bot,
   CalendarClock,
   CheckCircle2,
@@ -39,9 +41,12 @@ import {
   Paperclip,
   Send,
   ShieldAlert,
+  ShieldCheck,
+  SlidersHorizontal,
   Sparkles,
   Tag,
   TrendingUp,
+  Trash2,
   Upload,
   UserCheck,
   UserCog,
@@ -65,6 +70,12 @@ import { useLocation, useRoute } from "wouter";
 type RiskLevel = "low" | "medium" | "high";
 type CaseStatus = "under_review" | "confirmed_fraud" | "legitimate";
 type CasePriority = "critical" | "high" | "standard";
+type SlaState = "on_track" | "due_soon" | "overdue" | "no_deadline";
+type QueueViewFilters = {
+  queue: "all" | "mine" | "unassigned";
+  priority?: CasePriority;
+  slaState?: SlaState;
+};
 type AssessmentForm = {
   amount: string;
   merchantCategory: string;
@@ -101,6 +112,18 @@ const readablePriority: Record<CasePriority, string> = {
   high: "High",
   standard: "Standard",
 };
+const slaStyle: Record<SlaState, string> = {
+  on_track: "border-emerald-300/20 bg-emerald-300/10 text-emerald-200",
+  due_soon: "border-amber-300/20 bg-amber-300/10 text-amber-200",
+  overdue: "border-rose-300/20 bg-rose-300/10 text-rose-200",
+  no_deadline: "border-slate-300/15 bg-slate-300/[0.07] text-slate-400",
+};
+const readableSla: Record<SlaState, string> = {
+  on_track: "On track",
+  due_soon: "Due soon",
+  overdue: "Overdue",
+  no_deadline: "No deadline",
+};
 
 function RiskPill({ level }: { level: RiskLevel }) {
   return (
@@ -109,6 +132,16 @@ function RiskPill({ level }: { level: RiskLevel }) {
       className={`rounded-full px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] ${riskStyle[level]}`}
     >
       {level}
+    </Badge>
+  );
+}
+function SlaPill({ state }: { state: SlaState }) {
+  return (
+    <Badge
+      variant="outline"
+      className={`rounded-full px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.1em] ${slaStyle[state]}`}
+    >
+      {readableSla[state]}
     </Badge>
   );
 }
@@ -181,7 +214,7 @@ function PageTitle({
     <div className="mb-8 flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
       <div>
         <Eyebrow>{eyebrow}</Eyebrow>
-        <h1 className="mt-2 text-3xl font-semibold tracking-tight text-slate-50 sm:text-4xl">
+        <h1 className="font-display mt-2 text-4xl font-medium leading-[0.95] text-slate-50 sm:text-5xl">
           {title}
         </h1>
       </div>
@@ -1033,6 +1066,12 @@ export function TransactionDetailPage() {
                 <div className="mt-4 flex flex-wrap items-center gap-2">
                   <RiskPill level={record.riskLevel} />
                   <StatusPill status={record.caseStatus} />
+                  <Badge
+                    variant="outline"
+                    className="border-cyan-300/15 bg-cyan-300/[0.05] text-cyan-200"
+                  >
+                    Policy {record.policyVersion}
+                  </Badge>
                   <span className="text-sm text-slate-400">
                     Created {date(record.createdAt)}
                   </span>
@@ -1114,6 +1153,40 @@ export function TransactionDetailPage() {
                 </p>
               )}
             </div>
+            {record.policySignals?.length ? (
+              <div className="mt-6 border-t border-white/[0.06] pt-5">
+                <p className="text-sm font-semibold text-slate-100">
+                  Operational policy signals
+                </p>
+                <p className="mt-1 text-xs leading-5 text-slate-500">
+                  These review signals are separate from the model score and
+                  never constitute an automatic fraud decision.
+                </p>
+                <div className="mt-4 space-y-3">
+                  {record.policySignals.map((signal: any) => (
+                    <div
+                      key={signal.key}
+                      className="rounded-xl border border-amber-300/15 bg-amber-300/[0.04] p-4"
+                    >
+                      <div className="flex items-center justify-between gap-3">
+                        <p className="text-sm font-medium text-amber-100">
+                          {signal.label}
+                        </p>
+                        <Badge
+                          variant="outline"
+                          className="border-amber-300/20 bg-amber-300/10 text-[10px] uppercase tracking-[0.1em] text-amber-200"
+                        >
+                          {signal.impact}
+                        </Badge>
+                      </div>
+                      <p className="mt-2 text-sm leading-6 text-slate-400">
+                        {signal.detail}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : null}
           </Panel>
         </div>
         <Panel>
@@ -1154,8 +1227,130 @@ export function TransactionDetailPage() {
           ) : null}
         </Panel>
       </div>
+      <CaseChecklistPanel caseId={record.id} />
+      <RelatedActivityPanel caseId={record.id} />
       <CaseCollaborationPanel caseId={record.id} />
     </Frame>
+  );
+}
+
+function CaseChecklistPanel({ caseId }: { caseId: number }) {
+  const utils = trpc.useUtils();
+  const checklist = trpc.risk.checklist.useQuery({ id: caseId });
+  const [drafts, setDrafts] = useState<Record<string, string>>({});
+  const updateChecklist = trpc.risk.updateChecklist.useMutation({
+    onSuccess: async () => {
+      await utils.risk.checklist.invalidate({ id: caseId });
+      toast.success("Checklist item saved");
+    },
+    onError: error =>
+      toast.error("Unable to save checklist item", {
+        description: error.message,
+      }),
+  });
+  return (
+    <Panel className="mt-6">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <p className="text-sm font-semibold text-slate-100">
+            Guided review checklist
+          </p>
+          <p className="mt-1 max-w-2xl text-xs leading-5 text-slate-500">
+            Structured review prompts help investigators document coverage
+            without replacing judgment or automatically deciding the case.
+          </p>
+        </div>
+        {checklist.data ? (
+          <Badge
+            variant="outline"
+            className="w-fit border-cyan-300/20 bg-cyan-300/10 text-cyan-200"
+          >
+            {checklist.data.completedCount}/{checklist.data.totalCount} complete
+          </Badge>
+        ) : null}
+      </div>
+      {checklist.isLoading ? (
+        <p className="mt-5 text-sm text-slate-500">Loading review steps…</p>
+      ) : checklist.error ? (
+        <p
+          className="mt-5 rounded-xl border border-rose-300/15 bg-rose-300/[0.04] p-4 text-sm text-rose-200"
+          role="alert"
+        >
+          Unable to load the review checklist.
+        </p>
+      ) : (
+        <div className="mt-5 space-y-3">
+          {checklist.data?.items.map(item => {
+            const note = drafts[item.itemKey] ?? item.note;
+            return (
+              <div
+                key={item.itemKey}
+                className="rounded-xl border border-white/[0.06] bg-white/[0.025] p-4"
+              >
+                <div className="flex items-start gap-3">
+                  <input
+                    type="checkbox"
+                    checked={item.completed}
+                    onChange={() =>
+                      updateChecklist.mutate({
+                        id: caseId,
+                        itemKey: item.itemKey,
+                        completed: !item.completed,
+                        note,
+                      })
+                    }
+                    disabled={updateChecklist.isPending}
+                    aria-label={`Mark ${item.label} complete`}
+                    className="mt-1 h-4 w-4 shrink-0 accent-cyan-300"
+                  />
+                  <div className="min-w-0 flex-1">
+                    <p
+                      className={`text-sm font-medium ${item.completed ? "text-emerald-200" : "text-slate-200"}`}
+                    >
+                      {item.label}
+                    </p>
+                    <p className="mt-1 text-xs leading-5 text-slate-500">
+                      {item.description}
+                    </p>
+                    <Textarea
+                      aria-label={`Note for ${item.label}`}
+                      value={note}
+                      onChange={event =>
+                        setDrafts(current => ({
+                          ...current,
+                          [item.itemKey]: event.target.value,
+                        }))
+                      }
+                      placeholder="Optional reviewer note…"
+                      maxLength={500}
+                      className="mt-3 min-h-[58px] border-white/10 bg-[#07111e] text-xs text-slate-300 placeholder:text-slate-600 focus-visible:ring-cyan-300"
+                    />
+                    <div className="mt-2 flex justify-end">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() =>
+                          updateChecklist.mutate({
+                            id: caseId,
+                            itemKey: item.itemKey,
+                            completed: item.completed,
+                            note,
+                          })
+                        }
+                        disabled={updateChecklist.isPending}
+                        className="border-white/10 bg-white/[0.03] text-xs text-cyan-200 hover:bg-white/[0.08]"
+                      >
+                        Save note
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </Panel>
   );
 }
 
@@ -1311,6 +1506,11 @@ export function CaseworkPage() {
 export function ModelHealthPage() {
   const health = trpc.risk.modelHealth.useQuery();
   const data = health.data;
+  const [threshold, setThreshold] = useState(70);
+  const thresholdAnalysis = trpc.risk.thresholdAnalysis.useQuery(
+    { threshold },
+    { enabled: health.isSuccess }
+  );
   const percent = (value: number | null | undefined) =>
     value === null || value === undefined ? "—" : (value / 10).toFixed(1) + "%";
   const confusionChart = data
@@ -1519,6 +1719,76 @@ export function ModelHealthPage() {
               </div>
             </Panel>
           </div>
+          <Panel className="mt-6 border-cyan-300/10 bg-cyan-300/[0.025]">
+            <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+              <div>
+                <p className="text-sm font-semibold text-slate-100">
+                  Threshold simulator
+                </p>
+                <p className="mt-1 max-w-2xl text-xs leading-5 text-slate-500">
+                  Preview how a high-risk cutoff would affect the reviewed
+                  synthetic outcomes and projected queue volume. This does not
+                  change the live scoring policy.
+                </p>
+              </div>
+              <div className="w-full max-w-sm">
+                <div className="flex items-center justify-between">
+                  <label
+                    htmlFor="threshold-simulator"
+                    className="text-xs text-slate-400"
+                  >
+                    High-risk threshold
+                  </label>
+                  <span className="font-mono text-lg font-semibold text-cyan-200">
+                    {threshold}
+                  </span>
+                </div>
+                <input
+                  id="threshold-simulator"
+                  type="range"
+                  min="1"
+                  max="99"
+                  step="1"
+                  value={threshold}
+                  onChange={event => setThreshold(Number(event.target.value))}
+                  className="mt-3 w-full accent-cyan-300"
+                />
+              </div>
+            </div>
+            {thresholdAnalysis.isLoading ? (
+              <p className="mt-5 text-sm text-slate-500">
+                Calculating threshold impact…
+              </p>
+            ) : thresholdAnalysis.data ? (
+              <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+                {[
+                  [
+                    "Projected high risk",
+                    thresholdAnalysis.data.projectedHighRisk,
+                  ],
+                  ["Reviewed", thresholdAnalysis.data.reviewed],
+                  ["Precision", percent(thresholdAnalysis.data.precisionMilli)],
+                  ["Recall", percent(thresholdAnalysis.data.recallMilli)],
+                  ["F1 score", percent(thresholdAnalysis.data.f1Milli)],
+                ].map(([label, value]) => (
+                  <div
+                    key={String(label)}
+                    className="rounded-xl border border-white/[0.06] bg-[#07111e] p-4"
+                  >
+                    <p className="text-xs text-slate-500">{label}</p>
+                    <p className="mt-2 text-xl font-semibold text-slate-100">
+                      {value}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="mt-5 text-sm text-slate-500">
+                Threshold analysis is available to managers and administrators
+                with confirmed synthetic outcomes.
+              </p>
+            )}
+          </Panel>
           <Panel className="mt-6">
             <p className="text-sm font-semibold text-slate-100">
               Review summary
@@ -1550,6 +1820,1603 @@ export function ModelHealthPage() {
           </Panel>
         </>
       )}
+    </Frame>
+  );
+}
+
+type PolicyForm = {
+  highRiskThreshold: number;
+  mediumRiskThreshold: number;
+  highAmountThreshold: number;
+  mediumAmountThreshold: number;
+  lowAmountThreshold: number;
+  highVelocityCount: number;
+  mediumVelocityCount: number;
+  policyHighValueAmount: number;
+  policyVelocityCount: number;
+};
+
+const defaultPolicyForm: PolicyForm = {
+  highRiskThreshold: 70,
+  mediumRiskThreshold: 35,
+  highAmountThreshold: 1500,
+  mediumAmountThreshold: 750,
+  lowAmountThreshold: 300,
+  highVelocityCount: 5,
+  mediumVelocityCount: 3,
+  policyHighValueAmount: 2000,
+  policyVelocityCount: 6,
+};
+
+export function PolicyStudioPage() {
+  const { user, organization, orgRole } = useAuth();
+  const canManage = Boolean(user && user.role !== "analyst");
+  const canApprove = user?.role === "admin" && orgRole === "org:admin";
+  const active = trpc.policy.active.useQuery(undefined, { enabled: canManage });
+  const policies = trpc.policy.list.useQuery(undefined, { enabled: canManage });
+  const utils = trpc.useUtils();
+  const [form, setForm] = useState<PolicyForm>(defaultPolicyForm);
+  const [changeNote, setChangeNote] = useState("");
+  useEffect(() => {
+    if (active.data?.config) setForm(active.data.config as PolicyForm);
+  }, [active.data?.version]);
+  const preview = trpc.policy.preview.useQuery(form, {
+    enabled: canManage && active.isSuccess,
+  });
+  const createDraft = trpc.policy.createDraft.useMutation({
+    onSuccess: async draft => {
+      setChangeNote("");
+      await Promise.all([
+        utils.policy.list.invalidate(),
+        utils.policy.active.invalidate(),
+      ]);
+      toast.success(`Policy draft v${draft.version} created`);
+    },
+    onError: error =>
+      toast.error("Unable to create policy draft", {
+        description: error.message,
+      }),
+  });
+  const approve = trpc.policy.approve.useMutation({
+    onSuccess: async policy => {
+      await Promise.all([
+        utils.policy.list.invalidate(),
+        utils.policy.active.invalidate(),
+      ]);
+      toast.success(`Policy v${policy.version} is active`);
+    },
+    onError: error =>
+      toast.error("Unable to activate policy", { description: error.message }),
+  });
+  const rollback = trpc.policy.rollback.useMutation({
+    onSuccess: async policy => {
+      await Promise.all([
+        utils.policy.list.invalidate(),
+        utils.policy.active.invalidate(),
+      ]);
+      toast.success(`Rolled back to policy v${policy.version}`);
+    },
+    onError: error =>
+      toast.error("Unable to roll back policy", { description: error.message }),
+  });
+  const setField = (field: keyof PolicyForm, value: string) =>
+    setForm(current => ({ ...current, [field]: Number(value) }));
+  const fields: Array<[keyof PolicyForm, string, string]> = [
+    [
+      "highRiskThreshold",
+      "High-risk score threshold",
+      "Score at or above this value is high risk.",
+    ],
+    [
+      "mediumRiskThreshold",
+      "Medium-risk score threshold",
+      "Score at or above this value is medium risk.",
+    ],
+    [
+      "highAmountThreshold",
+      "High amount threshold",
+      "Amount that receives the highest amount factor.",
+    ],
+    [
+      "mediumAmountThreshold",
+      "Medium amount threshold",
+      "Amount that receives the medium amount factor.",
+    ],
+    [
+      "lowAmountThreshold",
+      "Low amount threshold",
+      "Amount that receives the low amount factor.",
+    ],
+    [
+      "highVelocityCount",
+      "High velocity count",
+      "Recent-activity count for the high velocity factor.",
+    ],
+    [
+      "mediumVelocityCount",
+      "Medium velocity count",
+      "Recent-activity count for the medium velocity factor.",
+    ],
+    [
+      "policyHighValueAmount",
+      "Policy high-value amount",
+      "Operational review signal threshold.",
+    ],
+    [
+      "policyVelocityCount",
+      "Policy velocity count",
+      "Operational velocity watch threshold.",
+    ],
+  ];
+
+  if (!canManage) {
+    return (
+      <Frame>
+        <PageTitle eyebrow="Governed risk controls" title="Policy Studio" />
+        <QueryState
+          state="error"
+          label="Policy controls are available to managers and administrators only."
+        />
+      </Frame>
+    );
+  }
+  if (active.isLoading || policies.isLoading) {
+    return (
+      <Frame>
+        <PageTitle eyebrow="Governed risk controls" title="Policy Studio" />
+        <QueryState state="loading" label="Loading approved policy versions…" />
+      </Frame>
+    );
+  }
+  if (active.error || policies.error || !active.data || !policies.data) {
+    return (
+      <Frame>
+        <PageTitle eyebrow="Governed risk controls" title="Policy Studio" />
+        <QueryState
+          state="error"
+          label="Unable to load policy versions. Refresh and try again."
+        />
+      </Frame>
+    );
+  }
+  const activePolicy = active.data;
+  const busy = createDraft.isPending || approve.isPending || rollback.isPending;
+  return (
+    <Frame>
+      <PageTitle
+        eyebrow={organization?.name ?? "Active workspace"}
+        title="Policy Studio"
+      >
+        <div className="flex items-center gap-2 text-xs text-slate-500">
+          <SlidersHorizontal className="h-4 w-4 text-cyan-300" />
+          Draft, preview, approve, and roll back
+        </div>
+      </PageTitle>
+      <div className="mb-6 rounded-xl border border-amber-300/15 bg-amber-300/[0.045] px-4 py-3 text-sm leading-6 text-amber-100">
+        Policy changes affect future assessments only. Drafts require
+        administrator approval before activation, and every activation or
+        rollback is audited.
+      </div>
+      <div className="grid gap-6 xl:grid-cols-[0.95fr_1.05fr]">
+        <Panel>
+          <div className="flex items-start gap-3">
+            <SlidersHorizontal className="mt-0.5 h-5 w-5 text-cyan-300" />
+            <div>
+              <p className="text-sm font-semibold text-slate-100">
+                Draft policy configuration
+              </p>
+              <p className="mt-1 text-xs leading-5 text-slate-500">
+                Active version: v{activePolicy.version}. Inputs are bounded and
+                ordered server-side.
+              </p>
+            </div>
+          </div>
+          <div className="mt-5 grid gap-4 sm:grid-cols-2">
+            {fields.map(([field, label, detail]) => (
+              <div key={field}>
+                <label
+                  htmlFor={`policy-${field}`}
+                  className="text-xs font-medium text-slate-400"
+                >
+                  {label}
+                </label>
+                <Input
+                  id={`policy-${field}`}
+                  type="number"
+                  min={field.includes("Threshold") ? 1 : 1}
+                  max={field.includes("Risk") ? 99 : 1000000}
+                  value={form[field]}
+                  onChange={event => setField(field, event.target.value)}
+                  className="mt-2 border-white/10 bg-[#07111e] text-slate-100 focus-visible:ring-cyan-300"
+                />
+                <p className="mt-1 text-[11px] leading-4 text-slate-600">
+                  {detail}
+                </p>
+              </div>
+            ))}
+          </div>
+          <Textarea
+            aria-label="Policy change note"
+            value={changeNote}
+            onChange={event => setChangeNote(event.target.value)}
+            placeholder="Explain why this policy change is being proposed…"
+            maxLength={500}
+            className="mt-5 min-h-[90px] border-white/10 bg-[#07111e] text-sm text-slate-200 placeholder:text-slate-600 focus-visible:ring-cyan-300"
+          />
+          <Button
+            onClick={() => createDraft.mutate({ config: form, changeNote })}
+            disabled={busy || changeNote.trim().length < 5}
+            className="mt-4 w-full bg-cyan-300 text-slate-950 hover:bg-cyan-200"
+          >
+            {createDraft.isPending ? "Creating draft…" : "Create policy draft"}
+          </Button>
+        </Panel>
+        <Panel>
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <p className="text-sm font-semibold text-slate-100">
+                Impact preview
+              </p>
+              <p className="mt-1 text-xs leading-5 text-slate-500">
+                Current synthetic cases are rescored for comparison; no records
+                are modified.
+              </p>
+            </div>
+            <Badge
+              variant="outline"
+              className="border-cyan-300/20 bg-cyan-300/10 text-cyan-200"
+            >
+              Read-only
+            </Badge>
+          </div>
+          {preview.isLoading ? (
+            <p className="mt-6 text-sm text-slate-500">Calculating impact…</p>
+          ) : preview.error ? (
+            <p
+              className="mt-6 rounded-xl border border-rose-300/15 bg-rose-300/[0.04] p-4 text-sm leading-6 text-rose-200"
+              role="alert"
+            >
+              Preview unavailable: {preview.error.message}
+            </p>
+          ) : preview.data ? (
+            <>
+              <div className="mt-5 grid gap-3 sm:grid-cols-3">
+                {[
+                  ["Active high risk", preview.data.projectedHighRiskCurrent],
+                  [
+                    "Proposed high risk",
+                    preview.data.projectedHighRiskProposed,
+                  ],
+                  ["Changed fields", preview.data.changedFields.length],
+                ].map(([label, value]) => (
+                  <div
+                    key={String(label)}
+                    className="rounded-xl border border-white/[0.06] bg-[#07111e] p-4"
+                  >
+                    <p className="text-xs text-slate-500">{label}</p>
+                    <p className="mt-2 text-2xl font-semibold text-slate-100">
+                      {value}
+                    </p>
+                  </div>
+                ))}
+              </div>
+              <div className="mt-5 overflow-x-auto rounded-xl border border-white/[0.06]">
+                <table className="w-full text-left text-xs">
+                  <thead className="bg-white/[0.035] text-slate-500">
+                    <tr>
+                      <th className="px-3 py-2">Reference</th>
+                      <th className="px-3 py-2">Current</th>
+                      <th className="px-3 py-2">Proposed</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-white/[0.06]">
+                    {preview.data.examples.slice(0, 8).map(example => (
+                      <tr key={example.id}>
+                        <td className="px-3 py-2 font-mono text-slate-400">
+                          {example.reference}
+                        </td>
+                        <td className="px-3 py-2 text-slate-400">
+                          {example.current.riskLevel} ·{" "}
+                          {example.current.probability}%
+                        </td>
+                        <td className="px-3 py-2 text-cyan-200">
+                          {example.proposed.riskLevel} ·{" "}
+                          {example.proposed.probability}%
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </>
+          ) : null}
+        </Panel>
+      </div>
+      <Panel className="mt-6">
+        <p className="text-sm font-semibold text-slate-100">Policy history</p>
+        <p className="mt-1 text-xs leading-5 text-slate-500">
+          Drafts, active versions, and retired versions remain visible for
+          governance.
+        </p>
+        <div className="mt-5 space-y-3">
+          {policies.data.map(policy => (
+            <div
+              key={policy.id}
+              className="flex flex-col gap-3 rounded-xl border border-white/[0.06] bg-white/[0.025] p-4 lg:flex-row lg:items-center lg:justify-between"
+            >
+              <div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <p className="font-mono text-sm text-slate-200">
+                    v{policy.version}
+                  </p>
+                  <Badge
+                    variant="outline"
+                    className={
+                      policy.status === "active"
+                        ? "border-emerald-300/20 bg-emerald-300/10 text-emerald-200"
+                        : policy.status === "draft"
+                          ? "border-cyan-300/20 bg-cyan-300/10 text-cyan-200"
+                          : "border-slate-300/15 bg-slate-300/[0.07] text-slate-400"
+                    }
+                  >
+                    {policy.status}
+                  </Badge>
+                </div>
+                <p className="mt-2 text-sm text-slate-300">
+                  {policy.changeNote}
+                </p>
+                <p className="mt-1 text-xs text-slate-600">
+                  Created by {policy.createdByName ?? "system"} ·{" "}
+                  {date(policy.createdAt)}
+                </p>
+              </div>
+              {canApprove && policy.status !== "active" && policy.id > 0 ? (
+                <Button
+                  variant="outline"
+                  disabled={busy}
+                  onClick={() =>
+                    policy.status === "draft"
+                      ? approve.mutate({ id: policy.id })
+                      : rollback.mutate({ id: policy.id })
+                  }
+                  className="border-cyan-300/20 bg-cyan-300/[0.04] text-cyan-100 hover:bg-cyan-300/10"
+                >
+                  {policy.status === "draft"
+                    ? "Approve and activate"
+                    : "Roll back to this version"}
+                </Button>
+              ) : null}
+            </div>
+          ))}
+        </div>
+      </Panel>
+    </Frame>
+  );
+}
+
+type ModelRegistryForm = {
+  modelKey: string;
+  version: string;
+  artifactHash: string;
+  datasetLabel: string;
+  precision: string;
+  recall: string;
+  f1Score: string;
+  prAuc: string;
+  threshold: string;
+  reviewed: string;
+  changeNote: string;
+};
+export function ModelRegistryPage() {
+  const { user, orgRole } = useAuth();
+  const utils = trpc.useUtils();
+  const active = trpc.modelRegistry.active.useQuery(undefined, {
+    enabled: user?.role !== "analyst",
+  });
+  const models = trpc.modelRegistry.list.useQuery(undefined, {
+    enabled: user?.role !== "analyst",
+  });
+  const [form, setForm] = useState<ModelRegistryForm>({
+    modelKey: "fraudlens-demonstration",
+    version: "candidate-1",
+    artifactHash: "demo-candidate-artifact",
+    datasetLabel: "Approved evaluation dataset",
+    precision: "39.8",
+    recall: "82.3",
+    f1Score: "53.7",
+    prAuc: "60.7",
+    threshold: "0.95",
+    reviewed: "120000",
+    changeNote: "",
+  });
+  const [previewRequested, setPreviewRequested] = useState(false);
+  useEffect(() => {
+    if (!active.data) return;
+    setForm(current => ({
+      ...current,
+      modelKey: active.data.modelKey,
+      datasetLabel: active.data.datasetLabel,
+    }));
+  }, [active.data?.id]);
+  const evaluation = {
+    precisionMilli: Math.round(Number(form.precision) * 10),
+    recallMilli: Math.round(Number(form.recall) * 10),
+    f1Milli: Math.round(Number(form.f1Score) * 10),
+    prAucMilli: Math.round(Number(form.prAuc) * 10),
+    threshold: Number(form.threshold),
+    reviewed: Number(form.reviewed),
+  };
+  const valid =
+    form.modelKey.trim().length >= 2 &&
+    form.version.trim().length >= 1 &&
+    form.artifactHash.trim().length >= 8 &&
+    form.datasetLabel.trim().length >= 3 &&
+    [
+      evaluation.precisionMilli,
+      evaluation.recallMilli,
+      evaluation.f1Milli,
+      evaluation.prAucMilli,
+    ].every(value => Number.isInteger(value) && value >= 0 && value <= 1000) &&
+    Number.isFinite(evaluation.threshold) &&
+    evaluation.threshold >= 0 &&
+    evaluation.threshold <= 1 &&
+    Number.isInteger(evaluation.reviewed) &&
+    evaluation.reviewed >= 0 &&
+    evaluation.reviewed <= 100000000;
+  const candidate = {
+    modelKey: form.modelKey.trim(),
+    version: form.version.trim(),
+    artifactHash: form.artifactHash.trim(),
+    datasetLabel: form.datasetLabel.trim(),
+    evaluation,
+  };
+  const preview = trpc.modelRegistry.preview.useQuery(candidate, {
+    enabled: previewRequested && valid && Boolean(active.data),
+  });
+  const createChallenger = trpc.modelRegistry.createChallenger.useMutation({
+    onSuccess: async () => {
+      setForm(current => ({ ...current, changeNote: "" }));
+      setPreviewRequested(false);
+      await utils.modelRegistry.list.invalidate();
+      toast.success("Model challenger registered");
+    },
+    onError: error => toast.error(error.message),
+  });
+  const approve = trpc.modelRegistry.approve.useMutation({
+    onSuccess: async () => {
+      await Promise.all([
+        utils.modelRegistry.active.invalidate(),
+        utils.modelRegistry.list.invalidate(),
+      ]);
+      toast.success("Model champion approved");
+    },
+    onError: error => toast.error(error.message),
+  });
+  const rollback = trpc.modelRegistry.rollback.useMutation({
+    onSuccess: async () => {
+      await Promise.all([
+        utils.modelRegistry.active.invalidate(),
+        utils.modelRegistry.list.invalidate(),
+      ]);
+      toast.success("Model champion rolled back");
+    },
+    onError: error => toast.error(error.message),
+  });
+  const canApprove = user?.role === "admin" && orgRole === "org:admin";
+  const busy =
+    createChallenger.isPending || approve.isPending || rollback.isPending;
+  const setField = (key: keyof ModelRegistryForm, value: string) =>
+    setForm(current => ({ ...current, [key]: value }));
+  if (user?.role === "analyst") {
+    return (
+      <Frame>
+        <PageTitle eyebrow="Model governance" title="Model Registry" />
+        <QueryState
+          state="error"
+          label="Model governance is available to managers and administrators only."
+        />
+      </Frame>
+    );
+  }
+  return (
+    <Frame>
+      <PageTitle eyebrow="Model governance" title="Model Registry">
+        <Badge
+          variant="outline"
+          className="border-amber-300/20 bg-amber-300/[0.06] text-amber-100"
+        >
+          Approval required
+        </Badge>
+      </PageTitle>
+      <div className="mb-6 rounded-xl border border-cyan-300/15 bg-cyan-300/[0.045] px-4 py-3 text-sm leading-6 text-cyan-100">
+        Compare bounded evaluation metadata before registering a challenger.
+        This demonstration registry does not change live manual scoring; every
+        promotion remains an explicit administrator decision.
+      </div>
+      {active.isLoading ? (
+        <QueryState state="loading" label="Loading model registry…" />
+      ) : active.error || !active.data ? (
+        <QueryState
+          state="error"
+          label="Unable to load model registry. Please refresh and try again."
+        />
+      ) : (
+        <>
+          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+            {[
+              ["Champion", active.data.version],
+              ["Precision", `${active.data.evaluation.precisionMilli / 10}%`],
+              ["Recall", `${active.data.evaluation.recallMilli / 10}%`],
+              [
+                "Reviewed rows",
+                active.data.evaluation.reviewed.toLocaleString(),
+              ],
+            ].map(([label, value]) => (
+              <Panel key={String(label)}>
+                <p className="text-xs text-slate-500">{label}</p>
+                <p className="mt-3 text-2xl font-semibold text-slate-100">
+                  {value}
+                </p>
+                <p className="mt-2 text-xs text-slate-500">
+                  {label === "Champion"
+                    ? "Current registry champion"
+                    : active.data.datasetLabel}
+                </p>
+              </Panel>
+            ))}
+          </div>
+          <div className="mt-6 grid gap-6 xl:grid-cols-[1.05fr_0.95fr]">
+            <Panel>
+              <p className="text-sm font-semibold text-slate-100">
+                Register challenger
+              </p>
+              <p className="mt-1 text-xs leading-5 text-slate-500">
+                Enter aggregate evaluation metadata only. Do not upload model
+                secrets or raw evaluation rows into this workspace.
+              </p>
+              <div className="mt-5 grid gap-4 sm:grid-cols-2">
+                {(
+                  [
+                    ["modelKey", "Model key"],
+                    ["version", "Version"],
+                    ["artifactHash", "Artifact fingerprint"],
+                    ["datasetLabel", "Dataset label"],
+                  ] as const
+                ).map(([key, label]) => (
+                  <div key={key}>
+                    <label
+                      htmlFor={`model-${key}`}
+                      className="text-xs font-medium text-slate-400"
+                    >
+                      {label}
+                    </label>
+                    <Input
+                      id={`model-${key}`}
+                      value={form[key]}
+                      onChange={event => setField(key, event.target.value)}
+                      maxLength={key === "datasetLabel" ? 250 : 128}
+                      className="mt-2 border-white/10 bg-[#07111e] text-slate-200 focus-visible:ring-cyan-300"
+                    />
+                  </div>
+                ))}
+              </div>
+              <div className="mt-4 grid gap-4 sm:grid-cols-3">
+                {(
+                  [
+                    ["precision", "Precision %"],
+                    ["recall", "Recall %"],
+                    ["f1Score", "F1 %"],
+                    ["prAuc", "PR-AUC %"],
+                    ["threshold", "Threshold 0–1"],
+                    ["reviewed", "Reviewed rows"],
+                  ] as const
+                ).map(([key, label]) => (
+                  <div key={key}>
+                    <label
+                      htmlFor={`model-${key}`}
+                      className="text-xs font-medium text-slate-400"
+                    >
+                      {label}
+                    </label>
+                    <Input
+                      id={`model-${key}`}
+                      type="number"
+                      step={key === "threshold" ? "0.001" : "0.1"}
+                      value={form[key]}
+                      onChange={event => setField(key, event.target.value)}
+                      className="mt-2 border-white/10 bg-[#07111e] text-slate-200 focus-visible:ring-cyan-300"
+                    />
+                  </div>
+                ))}
+              </div>
+              <label
+                htmlFor="model-change-note"
+                className="mt-4 block text-xs font-medium text-slate-400"
+              >
+                Change note <span className="text-cyan-300">Required</span>
+              </label>
+              <Textarea
+                id="model-change-note"
+                value={form.changeNote}
+                onChange={event => setField("changeNote", event.target.value)}
+                maxLength={500}
+                rows={2}
+                placeholder="Describe the evaluation and governance purpose"
+                className="mt-2 border-white/10 bg-[#07111e] text-slate-200 placeholder:text-slate-600 focus-visible:ring-cyan-300"
+              />
+              <div className="mt-5 flex flex-wrap gap-2">
+                <Button
+                  variant="outline"
+                  disabled={!valid || busy}
+                  onClick={() => setPreviewRequested(true)}
+                  className="border-white/10 bg-white/[0.03] text-slate-100 hover:bg-white/[0.08]"
+                >
+                  Preview comparison
+                </Button>
+                <Button
+                  disabled={!valid || form.changeNote.trim().length < 5 || busy}
+                  onClick={() =>
+                    createChallenger.mutate({
+                      ...candidate,
+                      changeNote: form.changeNote.trim(),
+                    })
+                  }
+                  className="bg-cyan-300 text-slate-950 hover:bg-cyan-200"
+                >
+                  {createChallenger.isPending
+                    ? "Saving…"
+                    : "Register challenger"}
+                </Button>
+              </div>
+            </Panel>
+            <Panel>
+              <p className="text-sm font-semibold text-slate-100">
+                Champion / challenger comparison
+              </p>
+              <p className="mt-1 text-xs leading-5 text-slate-500">
+                Preview is informational and cannot promote a model.
+              </p>
+              {previewRequested && preview.isLoading ? (
+                <p className="mt-6 text-sm text-slate-500">Comparing…</p>
+              ) : preview.error ? (
+                <p className="mt-6 text-sm text-rose-200" role="alert">
+                  Unable to prepare the model comparison.
+                </p>
+              ) : preview.data ? (
+                <div className="mt-5 space-y-3">
+                  {[
+                    [
+                      "Precision",
+                      preview.data.champion.evaluation.precisionMilli,
+                      preview.data.challenger.evaluation.precisionMilli,
+                    ],
+                    [
+                      "Recall",
+                      preview.data.champion.evaluation.recallMilli,
+                      preview.data.challenger.evaluation.recallMilli,
+                    ],
+                    [
+                      "F1 score",
+                      preview.data.champion.evaluation.f1Milli,
+                      preview.data.challenger.evaluation.f1Milli,
+                    ],
+                    [
+                      "PR-AUC",
+                      preview.data.champion.evaluation.prAucMilli,
+                      preview.data.challenger.evaluation.prAucMilli,
+                    ],
+                  ].map(([label, current, proposed]) => (
+                    <div
+                      key={String(label)}
+                      className="flex items-center justify-between border-b border-white/[0.06] pb-2 text-sm last:border-0"
+                    >
+                      <span className="text-slate-400">{label}</span>
+                      <span className="text-slate-200">
+                        {Number(current) / 10}% →{" "}
+                        <span className="text-cyan-200">
+                          {Number(proposed) / 10}%
+                        </span>
+                      </span>
+                    </div>
+                  ))}
+                  <Badge
+                    variant="outline"
+                    className="mt-2 border-amber-300/20 bg-amber-300/[0.06] text-amber-100"
+                  >
+                    Live scoring unchanged · approval required
+                  </Badge>
+                </div>
+              ) : (
+                <p className="mt-6 text-sm text-slate-500">
+                  Preview a valid challenger to compare aggregate metrics.
+                </p>
+              )}
+            </Panel>
+          </div>
+          <Panel className="mt-6">
+            <p className="text-sm font-semibold text-slate-100">
+              Registry history
+            </p>
+            <div className="mt-5 space-y-3">
+              {(models.data ?? []).map(model => (
+                <div
+                  key={model.id}
+                  className="flex flex-col gap-3 rounded-xl border border-white/[0.06] bg-white/[0.025] p-4 lg:flex-row lg:items-center lg:justify-between"
+                >
+                  <div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <p className="font-mono text-sm text-slate-200">
+                        {model.version}
+                      </p>
+                      <Badge
+                        variant="outline"
+                        className={
+                          model.status === "champion"
+                            ? "border-emerald-300/20 bg-emerald-300/10 text-emerald-200"
+                            : model.status === "challenger"
+                              ? "border-cyan-300/20 bg-cyan-300/10 text-cyan-200"
+                              : "border-slate-300/15 bg-slate-300/[0.07] text-slate-400"
+                        }
+                      >
+                        {model.status}
+                      </Badge>
+                    </div>
+                    <p className="mt-2 text-sm text-slate-300">
+                      {model.changeNote}
+                    </p>
+                    <p className="mt-1 text-xs text-slate-600">
+                      {model.modelKey} · {model.datasetLabel} ·{" "}
+                      {model.evaluation.reviewed.toLocaleString()} reviewed rows
+                    </p>
+                  </div>
+                  {canApprove &&
+                  model.id > 0 &&
+                  (model.status === "challenger" ||
+                    model.status === "retired") ? (
+                    <Button
+                      variant="outline"
+                      disabled={busy}
+                      onClick={() =>
+                        model.status === "challenger"
+                          ? approve.mutate({ id: model.id })
+                          : rollback.mutate({ id: model.id })
+                      }
+                      className="border-cyan-300/20 bg-cyan-300/[0.04] text-cyan-100 hover:bg-cyan-300/10"
+                    >
+                      {model.status === "challenger"
+                        ? "Approve champion"
+                        : "Restore as champion"}
+                    </Button>
+                  ) : null}
+                </div>
+              ))}
+            </div>
+          </Panel>
+        </>
+      )}
+    </Frame>
+  );
+}
+
+type RetentionForm = {
+  transactionRetentionDays: string;
+  evidenceRetentionDays: string;
+  auditRetentionDays: string;
+  effectiveAt: string;
+  changeNote: string;
+};
+export function RetentionPolicyPage() {
+  const { user, orgRole } = useAuth();
+  const utils = trpc.useUtils();
+  const active = trpc.retention.active.useQuery(undefined, {
+    enabled: user?.role !== "analyst",
+  });
+  const policies = trpc.retention.list.useQuery(undefined, {
+    enabled: user?.role !== "analyst",
+  });
+  const [form, setForm] = useState<RetentionForm>({
+    transactionRetentionDays: "365",
+    evidenceRetentionDays: "365",
+    auditRetentionDays: "730",
+    effectiveAt: dateInput(new Date()),
+    changeNote: "",
+  });
+  const [previewRequested, setPreviewRequested] = useState(false);
+  useEffect(() => {
+    if (!active.data) return;
+    setForm(current => ({
+      ...current,
+      transactionRetentionDays: String(active.data.transactionRetentionDays),
+      evidenceRetentionDays: String(active.data.evidenceRetentionDays),
+      auditRetentionDays: String(active.data.auditRetentionDays),
+      effectiveAt: dateInput(active.data.effectiveAt),
+    }));
+  }, [active.data?.id]);
+  const config = {
+    transactionRetentionDays: Number(form.transactionRetentionDays),
+    evidenceRetentionDays: Number(form.evidenceRetentionDays),
+    auditRetentionDays: Number(form.auditRetentionDays),
+    effectiveAt: form.effectiveAt
+      ? new Date(`${form.effectiveAt}T00:00:00`)
+      : new Date("invalid"),
+  };
+  const valid =
+    [
+      config.transactionRetentionDays,
+      config.evidenceRetentionDays,
+      config.auditRetentionDays,
+    ].every(Number.isInteger) &&
+    config.transactionRetentionDays >= 30 &&
+    config.transactionRetentionDays <= 3650 &&
+    config.evidenceRetentionDays >= 30 &&
+    config.evidenceRetentionDays <= 3650 &&
+    config.auditRetentionDays >= 90 &&
+    config.auditRetentionDays <= 3650 &&
+    !Number.isNaN(config.effectiveAt.getTime());
+  const preview = trpc.retention.preview.useQuery(config, {
+    enabled: previewRequested && valid && Boolean(active.data),
+  });
+  const createDraft = trpc.retention.createDraft.useMutation({
+    onSuccess: async () => {
+      setForm(current => ({ ...current, changeNote: "" }));
+      setPreviewRequested(false);
+      await Promise.all([
+        utils.retention.active.invalidate(),
+        utils.retention.list.invalidate(),
+      ]);
+      toast.success("Retention policy draft created");
+    },
+    onError: error => toast.error(error.message),
+  });
+  const approve = trpc.retention.approve.useMutation({
+    onSuccess: async () => {
+      await Promise.all([
+        utils.retention.active.invalidate(),
+        utils.retention.list.invalidate(),
+      ]);
+      toast.success("Retention policy approved");
+    },
+    onError: error => toast.error(error.message),
+  });
+  const rollback = trpc.retention.rollback.useMutation({
+    onSuccess: async () => {
+      await Promise.all([
+        utils.retention.active.invalidate(),
+        utils.retention.list.invalidate(),
+      ]);
+      toast.success("Retention policy rolled back");
+    },
+    onError: error => toast.error(error.message),
+  });
+  const canApprove = user?.role === "admin" && orgRole === "org:admin";
+  const busy = createDraft.isPending || approve.isPending || rollback.isPending;
+  if (user?.role === "analyst") {
+    return (
+      <Frame>
+        <PageTitle eyebrow="Data governance" title="Retention policies" />
+        <QueryState
+          state="error"
+          label="Retention policy governance is available to managers and administrators only."
+        />
+      </Frame>
+    );
+  }
+  return (
+    <Frame>
+      <PageTitle eyebrow="Data governance" title="Retention policies">
+        <Badge
+          variant="outline"
+          className="border-amber-300/20 bg-amber-300/[0.06] text-amber-100"
+        >
+          Preview and approval only
+        </Badge>
+      </PageTitle>
+      <div className="mb-6 rounded-xl border border-amber-300/15 bg-amber-300/[0.05] px-4 py-3 text-sm leading-6 text-amber-100">
+        Retention settings document proposed eligibility windows but do not
+        delete transactions, evidence, or audit records automatically. Apply
+        approved deletion workflows only after legal and compliance review.
+      </div>
+      {active.isLoading ? (
+        <QueryState state="loading" label="Loading retention policy…" />
+      ) : active.error || !active.data ? (
+        <QueryState
+          state="error"
+          label="Unable to load retention policy. Please refresh and try again."
+        />
+      ) : (
+        <>
+          <div className="grid gap-4 sm:grid-cols-3">
+            {[
+              ["Transactions", active.data.transactionRetentionDays],
+              ["Evidence", active.data.evidenceRetentionDays],
+              ["Audit events", active.data.auditRetentionDays],
+            ].map(([label, value]) => (
+              <Panel key={String(label)}>
+                <p className="text-xs text-slate-500">Active {label} window</p>
+                <p className="mt-3 text-2xl font-semibold text-slate-100">
+                  {value} days
+                </p>
+                <p className="mt-2 text-xs text-slate-500">
+                  Version v{active.data.version}
+                </p>
+              </Panel>
+            ))}
+          </div>
+          <div className="mt-6 grid gap-6 xl:grid-cols-[1.05fr_0.95fr]">
+            <Panel>
+              <p className="text-sm font-semibold text-slate-100">
+                Propose retention windows
+              </p>
+              <p className="mt-1 text-xs leading-5 text-slate-500">
+                Managers can prepare a draft. An administrator who is also a
+                Clerk organization administrator must approve it.
+              </p>
+              <div className="mt-5 grid gap-4 sm:grid-cols-3">
+                {(
+                  [
+                    ["transactionRetentionDays", "Transactions", 30, 3650],
+                    ["evidenceRetentionDays", "Evidence", 30, 3650],
+                    ["auditRetentionDays", "Audit events", 90, 3650],
+                  ] as const
+                ).map(([key, label, min, max]) => (
+                  <div key={key}>
+                    <label
+                      htmlFor={`retention-${key}`}
+                      className="text-xs font-medium text-slate-400"
+                    >
+                      {label} days
+                    </label>
+                    <Input
+                      id={`retention-${key}`}
+                      type="number"
+                      min={min}
+                      max={max}
+                      value={form[key]}
+                      onChange={event =>
+                        setForm(current => ({
+                          ...current,
+                          [key]: event.target.value,
+                        }))
+                      }
+                      className="mt-2 border-white/10 bg-[#07111e] text-slate-200 focus-visible:ring-cyan-300"
+                    />
+                  </div>
+                ))}
+              </div>
+              <div className="mt-4 grid gap-4 sm:grid-cols-[1fr_180px]">
+                <div>
+                  <label
+                    htmlFor="retention-change-note"
+                    className="text-xs font-medium text-slate-400"
+                  >
+                    Change note <span className="text-cyan-300">Required</span>
+                  </label>
+                  <Textarea
+                    id="retention-change-note"
+                    value={form.changeNote}
+                    onChange={event =>
+                      setForm(current => ({
+                        ...current,
+                        changeNote: event.target.value,
+                      }))
+                    }
+                    maxLength={500}
+                    rows={2}
+                    placeholder="Describe the approved governance reason"
+                    className="mt-2 border-white/10 bg-[#07111e] text-slate-200 placeholder:text-slate-600 focus-visible:ring-cyan-300"
+                  />
+                </div>
+                <div>
+                  <label
+                    htmlFor="retention-effective-at"
+                    className="text-xs font-medium text-slate-400"
+                  >
+                    Effective date
+                  </label>
+                  <Input
+                    id="retention-effective-at"
+                    type="date"
+                    value={form.effectiveAt}
+                    onChange={event =>
+                      setForm(current => ({
+                        ...current,
+                        effectiveAt: event.target.value,
+                      }))
+                    }
+                    className="mt-2 border-white/10 bg-[#07111e] text-slate-200 focus-visible:ring-cyan-300"
+                  />
+                </div>
+              </div>
+              <div className="mt-5 flex flex-wrap gap-2">
+                <Button
+                  variant="outline"
+                  disabled={!valid || busy}
+                  onClick={() => setPreviewRequested(true)}
+                  className="border-white/10 bg-white/[0.03] text-slate-100 hover:bg-white/[0.08]"
+                >
+                  Preview eligibility
+                </Button>
+                <Button
+                  disabled={!valid || form.changeNote.trim().length < 5 || busy}
+                  onClick={() =>
+                    createDraft.mutate({
+                      ...config,
+                      changeNote: form.changeNote.trim(),
+                    })
+                  }
+                  className="bg-cyan-300 text-slate-950 hover:bg-cyan-200"
+                >
+                  {createDraft.isPending ? "Saving…" : "Create draft"}
+                </Button>
+              </div>
+              {!valid ? (
+                <p className="mt-3 text-xs text-rose-200">
+                  Use 30–3,650 days for transactions/evidence, 90–3,650 days for
+                  audit events, and a valid effective date.
+                </p>
+              ) : form.changeNote.trim().length > 0 &&
+                form.changeNote.trim().length < 5 ? (
+                <p className="mt-3 text-xs text-rose-200">
+                  Enter at least five characters in the change note.
+                </p>
+              ) : null}
+            </Panel>
+            <Panel>
+              <p className="text-sm font-semibold text-slate-100">
+                Governance preview
+              </p>
+              <p className="mt-1 text-xs leading-5 text-slate-500">
+                Preview shows which records would be eligible under a future
+                cleanup workflow. No cleanup runs from this page.
+              </p>
+              {previewRequested && preview.isLoading ? (
+                <p className="mt-6 text-sm text-slate-500">Calculating…</p>
+              ) : preview.error ? (
+                <p className="mt-6 text-sm text-rose-200" role="alert">
+                  Unable to prepare the retention preview.
+                </p>
+              ) : preview.data ? (
+                <div className="mt-5 space-y-3 text-sm">
+                  <p className="text-slate-300">
+                    Active version v{preview.data.activeVersion} will remain in
+                    force until an administrator approves a draft.
+                  </p>
+                  <p className="text-slate-400">
+                    Candidate transaction records would be eligible before{" "}
+                    {date(preview.data.transactionRecordsEligibleAfter)}.
+                  </p>
+                  <p className="text-slate-400">
+                    Candidate evidence would be eligible before{" "}
+                    {date(preview.data.evidenceEligibleAfter)}.
+                  </p>
+                  <p className="text-slate-400">
+                    Candidate audit events would be eligible before{" "}
+                    {date(preview.data.auditEligibleAfter)}.
+                  </p>
+                  <Badge
+                    variant="outline"
+                    className="border-amber-300/20 bg-amber-300/[0.06] text-amber-100"
+                  >
+                    Automatic deletion disabled
+                  </Badge>
+                </div>
+              ) : (
+                <p className="mt-6 text-sm text-slate-500">
+                  Preview a valid proposal to see its eligibility windows.
+                </p>
+              )}
+            </Panel>
+          </div>
+          <Panel className="mt-6">
+            <p className="text-sm font-semibold text-slate-100">
+              Retention policy history
+            </p>
+            <div className="mt-5 space-y-3">
+              {(policies.data ?? []).map(policy => (
+                <div
+                  key={policy.id}
+                  className="flex flex-col gap-3 rounded-xl border border-white/[0.06] bg-white/[0.025] p-4 lg:flex-row lg:items-center lg:justify-between"
+                >
+                  <div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <p className="font-mono text-sm text-slate-200">
+                        v{policy.version}
+                      </p>
+                      <Badge
+                        variant="outline"
+                        className={
+                          policy.status === "active"
+                            ? "border-emerald-300/20 bg-emerald-300/10 text-emerald-200"
+                            : policy.status === "draft"
+                              ? "border-cyan-300/20 bg-cyan-300/10 text-cyan-200"
+                              : "border-slate-300/15 bg-slate-300/[0.07] text-slate-400"
+                        }
+                      >
+                        {policy.status}
+                      </Badge>
+                    </div>
+                    <p className="mt-2 text-sm text-slate-300">
+                      {policy.changeNote}
+                    </p>
+                    <p className="mt-1 text-xs text-slate-600">
+                      Transactions {policy.transactionRetentionDays}d · Evidence{" "}
+                      {policy.evidenceRetentionDays}d · Audit{" "}
+                      {policy.auditRetentionDays}d
+                    </p>
+                  </div>
+                  {canApprove && policy.status !== "active" && policy.id > 0 ? (
+                    <Button
+                      variant="outline"
+                      disabled={busy}
+                      onClick={() =>
+                        policy.status === "draft"
+                          ? approve.mutate({ id: policy.id })
+                          : rollback.mutate({ id: policy.id })
+                      }
+                      className="border-cyan-300/20 bg-cyan-300/[0.04] text-cyan-100 hover:bg-cyan-300/10"
+                    >
+                      {policy.status === "draft"
+                        ? "Approve and activate"
+                        : "Roll back to this version"}
+                    </Button>
+                  ) : null}
+                </div>
+              ))}
+            </div>
+          </Panel>
+        </>
+      )}
+    </Frame>
+  );
+}
+export function SecurityCenterPage() {
+  const { user, organization, orgRole } = useAuth();
+  const canReview = user?.role === "admin" && orgRole === "org:admin";
+  const security = trpc.security.overview.useQuery(undefined, {
+    enabled: user?.role !== "analyst",
+  });
+  const utils = trpc.useUtils();
+  const [reviewNote, setReviewNote] = useState("");
+  const [incidentNote, setIncidentNote] = useState("");
+  const completeReview = trpc.security.completeAccessReview.useMutation({
+    onSuccess: async () => {
+      setReviewNote("");
+      await utils.security.overview.invalidate();
+      toast.success("Access review recorded");
+    },
+    onError: error =>
+      toast.error("Unable to record access review", {
+        description: error.message,
+      }),
+  });
+  const incidentMode = trpc.security.setIncidentMode.useMutation({
+    onSuccess: async result => {
+      setIncidentNote("");
+      await utils.security.overview.invalidate();
+      toast.success(
+        result.incidentMode ? "Incident mode enabled" : "Incident mode disabled"
+      );
+    },
+    onError: error =>
+      toast.error("Unable to update incident mode", {
+        description: error.message,
+      }),
+  });
+  if (user?.role === "analyst") {
+    return (
+      <Frame>
+        <PageTitle
+          eyebrow="Governance and protection"
+          title="Security Center"
+        />
+        <QueryState
+          state="error"
+          label="Security posture is available to managers and administrators only."
+        />
+      </Frame>
+    );
+  }
+  if (security.isLoading) {
+    return (
+      <Frame>
+        <PageTitle
+          eyebrow="Governance and protection"
+          title="Security Center"
+        />
+        <QueryState
+          state="loading"
+          label="Loading workspace security posture…"
+        />
+      </Frame>
+    );
+  }
+  if (security.error || !security.data) {
+    return (
+      <Frame>
+        <PageTitle
+          eyebrow="Governance and protection"
+          title="Security Center"
+        />
+        <QueryState
+          state="error"
+          label="Unable to load workspace security posture. Refresh and try again."
+        />
+      </Frame>
+    );
+  }
+
+  const data = security.data;
+  const activeKeys = data.apiKeys.filter(
+    key =>
+      !key.revokedAt && (!key.expiresAt || new Date(key.expiresAt) > new Date())
+  );
+  const configuredWebhooks = data.webhooks.filter(
+    webhook => webhook.enabled && webhook.host
+  );
+  const securityChecks = [
+    [
+      "Organization-scoped roles",
+      "Enforced by the active workspace context",
+      true,
+    ],
+    ["Private evidence access", "Signed download path and tenant check", true],
+    [
+      "API credentials",
+      `${activeKeys.length} active key${activeKeys.length === 1 ? "" : "s"} · secrets masked`,
+      true,
+    ],
+    [
+      "Provider MFA and recovery",
+      "Verify in the Clerk production dashboard",
+      false,
+    ],
+    [
+      "Shared rate limiting",
+      "Add an edge or shared-store limiter before scaling",
+      false,
+    ],
+  ];
+
+  return (
+    <Frame>
+      <PageTitle
+        eyebrow={organization?.name ?? "Active workspace"}
+        title="Security Center"
+      >
+        <div className="flex items-center gap-2 text-xs text-slate-500">
+          <ShieldCheck className="h-4 w-4 text-cyan-300" />
+          Access review and integration posture
+        </div>
+      </PageTitle>
+      <div className="mb-6 rounded-xl border border-cyan-300/15 bg-cyan-300/[0.045] px-4 py-3 text-sm leading-6 text-cyan-100">
+        Review this workspace’s members, API credentials, notification
+        destinations, and provider-managed authentication controls regularly.
+        Secrets and raw webhook URLs are never displayed here.
+      </div>
+      <Panel className="mb-6 border-amber-300/15 bg-amber-300/[0.04]">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+          <div>
+            <div className="flex flex-wrap items-center gap-2">
+              <ShieldAlert className="h-5 w-5 text-amber-200" />
+              <p className="text-sm font-semibold text-slate-100">
+                Incident mode
+              </p>
+              <Badge
+                variant="outline"
+                className={
+                  data.incidentMode.incidentMode
+                    ? "border-rose-300/20 bg-rose-300/10 text-rose-200"
+                    : "border-emerald-300/20 bg-emerald-300/10 text-emerald-200"
+                }
+              >
+                {data.incidentMode.incidentMode ? "Active" : "Inactive"}
+              </Badge>
+            </div>
+            <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-400">
+              When active, server-side write procedures are suspended for this
+              organization while read-only investigation and administrator
+              recovery remain available.
+            </p>
+            {data.incidentMode.incidentMode ? (
+              <p className="mt-2 text-xs text-amber-100/75">
+                {data.incidentMode.incidentNote ?? "No incident note recorded."}{" "}
+                · Enabled by{" "}
+                {data.incidentMode.incidentActivatedByName ?? "administrator"}
+              </p>
+            ) : null}
+          </div>
+          {canReview ? (
+            data.incidentMode.incidentMode ? (
+              <Button
+                variant="outline"
+                disabled={incidentMode.isPending}
+                onClick={() => incidentMode.mutate({ enabled: false })}
+                className="border-emerald-300/20 bg-emerald-300/[0.05] text-emerald-100 hover:bg-emerald-300/10"
+              >
+                {incidentMode.isPending ? "Restoring…" : "Exit incident mode"}
+              </Button>
+            ) : (
+              <div className="flex w-full flex-col gap-2 sm:max-w-md">
+                <Input
+                  value={incidentNote}
+                  onChange={event => setIncidentNote(event.target.value)}
+                  maxLength={500}
+                  placeholder="Reason for activating incident mode"
+                  className="border-white/10 bg-[#07111e] text-slate-200 placeholder:text-slate-600 focus-visible:ring-amber-300"
+                />
+                <Button
+                  variant="outline"
+                  disabled={
+                    incidentNote.trim().length < 5 || incidentMode.isPending
+                  }
+                  onClick={() =>
+                    incidentMode.mutate({
+                      enabled: true,
+                      note: incidentNote.trim(),
+                    })
+                  }
+                  className="border-amber-300/20 bg-amber-300/[0.05] text-amber-100 hover:bg-amber-300/10"
+                >
+                  {incidentMode.isPending
+                    ? "Activating…"
+                    : "Activate incident mode"}
+                </Button>
+              </div>
+            )
+          ) : null}
+        </div>
+      </Panel>
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        {[
+          ["Active API keys", activeKeys.length, "text-cyan-200"],
+          ["Configured webhooks", configuredWebhooks.length, "text-violet-200"],
+          [
+            "Recent security events",
+            data.recentEvents.length,
+            "text-amber-200",
+          ],
+          [
+            "Last access review",
+            data.lastAccessReview
+              ? date(data.lastAccessReview.createdAt)
+              : "Not recorded",
+            "text-emerald-200",
+          ],
+        ].map(([label, value, tone]) => (
+          <Panel key={String(label)}>
+            <p className="text-xs text-slate-500">{label}</p>
+            <p className={`mt-3 text-2xl font-semibold ${tone}`}>{value}</p>
+            <p className="mt-2 text-xs leading-5 text-slate-500">
+              {label === "Last access review"
+                ? data.lastAccessReview?.actorName
+                  ? `Recorded by ${data.lastAccessReview.actorName}`
+                  : "Complete an administrator review below"
+                : "Current active workspace snapshot"}
+            </p>
+          </Panel>
+        ))}
+      </div>
+      <div className="mt-6 grid gap-6 xl:grid-cols-[0.9fr_1.1fr]">
+        <Panel>
+          <div className="flex items-start gap-3">
+            <ShieldCheck className="mt-0.5 h-5 w-5 text-cyan-300" />
+            <div>
+              <p className="text-sm font-semibold text-slate-100">
+                Protection checklist
+              </p>
+              <p className="mt-1 text-xs leading-5 text-slate-500">
+                Code-enforced controls are shown separately from provider or
+                deployment actions.
+              </p>
+            </div>
+          </div>
+          <div className="mt-5 space-y-3">
+            {securityChecks.map(([label, detail, enforced]) => (
+              <div
+                key={String(label)}
+                className="flex items-start gap-3 rounded-xl border border-white/[0.06] bg-white/[0.025] p-3"
+              >
+                <CheckCircle2
+                  className={`mt-0.5 h-4 w-4 shrink-0 ${enforced ? "text-emerald-300" : "text-amber-300"}`}
+                />
+                <div>
+                  <p className="text-sm font-medium text-slate-200">{label}</p>
+                  <p className="mt-1 text-xs leading-5 text-slate-500">
+                    {detail}
+                  </p>
+                </div>
+              </div>
+            ))}
+          </div>
+        </Panel>
+        <Panel>
+          <div className="flex items-start gap-3">
+            <History className="mt-0.5 h-5 w-5 text-cyan-300" />
+            <div>
+              <p className="text-sm font-semibold text-slate-100">
+                Complete access review
+              </p>
+              <p className="mt-1 text-xs leading-5 text-slate-500">
+                Confirm that workspace access, credentials, destinations, and
+                recovery controls are still appropriate.
+              </p>
+            </div>
+          </div>
+          <div className="mt-5 rounded-xl border border-white/[0.06] bg-[#07111e] p-4 text-sm leading-6 text-slate-400">
+            {data.lastAccessReview
+              ? `Last recorded ${date(data.lastAccessReview.createdAt)} by ${data.lastAccessReview.actorName ?? "an administrator"}.`
+              : "No access review has been recorded for this workspace yet."}
+          </div>
+          {canReview ? (
+            <form
+              className="mt-4 space-y-3"
+              onSubmit={event => {
+                event.preventDefault();
+                completeReview.mutate({ note: reviewNote });
+              }}
+            >
+              <Textarea
+                aria-label="Access review note"
+                value={reviewNote}
+                onChange={event => setReviewNote(event.target.value)}
+                placeholder="Record what you reviewed and any follow-up needed…"
+                maxLength={300}
+                className="min-h-[88px] border-white/10 bg-[#07111e] text-sm text-slate-200 placeholder:text-slate-600 focus-visible:ring-cyan-300"
+              />
+              <Button
+                type="submit"
+                disabled={
+                  completeReview.isPending || reviewNote.trim().length < 3
+                }
+                className="bg-cyan-300 text-slate-950 hover:bg-cyan-200"
+              >
+                {completeReview.isPending
+                  ? "Recording review…"
+                  : "Record access review"}
+              </Button>
+            </form>
+          ) : (
+            <p className="mt-4 text-xs leading-5 text-slate-500">
+              Only a FraudLens administrator with Clerk organization-admin
+              membership can record the review.
+            </p>
+          )}
+        </Panel>
+      </div>
+      <div className="mt-6 grid gap-6 xl:grid-cols-2">
+        <Panel>
+          <div className="flex items-center gap-3">
+            <KeyRound className="h-5 w-5 text-cyan-300" />
+            <div>
+              <p className="text-sm font-semibold text-slate-100">
+                Credential inventory
+              </p>
+              <p className="mt-1 text-xs text-slate-500">
+                Masked metadata only; revoke credentials from API Integrations.
+              </p>
+            </div>
+          </div>
+          <div className="mt-5 space-y-3">
+            {data.apiKeys.length ? (
+              data.apiKeys.map(key => (
+                <div
+                  key={key.id}
+                  className="flex items-center justify-between gap-4 rounded-xl border border-white/[0.06] bg-white/[0.025] p-3"
+                >
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-medium text-slate-200">
+                      {key.name}
+                    </p>
+                    <p className="mt-1 font-mono text-xs text-slate-500">
+                      {key.keyPrefix}
+                    </p>
+                  </div>
+                  <Badge
+                    variant="outline"
+                    className={
+                      !key.revokedAt &&
+                      (!key.expiresAt || new Date(key.expiresAt) > new Date())
+                        ? "border-emerald-300/20 bg-emerald-300/10 text-emerald-200"
+                        : "border-slate-300/15 bg-slate-300/[0.07] text-slate-400"
+                    }
+                  >
+                    {key.revokedAt
+                      ? "Revoked"
+                      : key.expiresAt && new Date(key.expiresAt) <= new Date()
+                        ? "Expired"
+                        : "Active"}
+                  </Badge>
+                </div>
+              ))
+            ) : (
+              <p className="text-sm text-slate-500">
+                No API keys have been issued.
+              </p>
+            )}
+          </div>
+        </Panel>
+        <Panel>
+          <div className="flex items-center gap-3">
+            <BellRing className="h-5 w-5 text-cyan-300" />
+            <div>
+              <p className="text-sm font-semibold text-slate-100">
+                Notification destinations
+              </p>
+              <p className="mt-1 text-xs text-slate-500">
+                Only approved hostnames are displayed; full webhook URLs remain
+                secret.
+              </p>
+            </div>
+          </div>
+          <div className="mt-5 space-y-3">
+            {data.webhooks.map(webhook => (
+              <div
+                key={webhook.channel}
+                className="flex items-center justify-between gap-4 rounded-xl border border-white/[0.06] bg-white/[0.025] p-3"
+              >
+                <div>
+                  <p className="text-sm font-medium text-slate-200">
+                    {webhook.channel}
+                  </p>
+                  <p className="mt-1 text-xs text-slate-500">
+                    {webhook.enabled
+                      ? (webhook.host ?? "Configured but unavailable")
+                      : "Disabled"}
+                  </p>
+                </div>
+                <Badge
+                  variant="outline"
+                  className={
+                    webhook.enabled && webhook.host
+                      ? "border-violet-300/20 bg-violet-300/10 text-violet-200"
+                      : "border-slate-300/15 bg-slate-300/[0.07] text-slate-400"
+                  }
+                >
+                  {webhook.enabled && webhook.host ? "Configured" : "Inactive"}
+                </Badge>
+              </div>
+            ))}
+          </div>
+        </Panel>
+      </div>
+      <Panel className="mt-6">
+        <div className="flex items-center gap-3">
+          <History className="h-5 w-5 text-cyan-300" />
+          <div>
+            <p className="text-sm font-semibold text-slate-100">
+              Recent security events
+            </p>
+            <p className="mt-1 text-xs text-slate-500">
+              Organization-scoped events with secrets and sensitive payloads
+              redacted.
+            </p>
+          </div>
+        </div>
+        <div className="mt-5 space-y-3">
+          {data.recentEvents.length ? (
+            data.recentEvents.map(event => (
+              <div
+                key={event.id}
+                className="flex flex-col gap-1 rounded-xl border border-white/[0.06] bg-white/[0.025] p-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4"
+              >
+                <div>
+                  <p className="text-sm text-slate-300">{event.summary}</p>
+                  <p className="mt-1 text-xs text-slate-600">
+                    {event.eventType} · {event.actorName ?? "System"}
+                  </p>
+                </div>
+                <p className="shrink-0 text-xs text-slate-600">
+                  {date(event.createdAt)}
+                </p>
+              </div>
+            ))
+          ) : (
+            <p className="text-sm text-slate-500">
+              No security events recorded yet.
+            </p>
+          )}
+        </div>
+      </Panel>
     </Frame>
   );
 }
@@ -2163,17 +4030,27 @@ export function CaseQueuesPage() {
   const utils = trpc.useUtils();
   const [queue, setQueue] = useState<"all" | "mine" | "unassigned">("all");
   const [priority, setPriority] = useState<"" | CasePriority>("");
+  const [slaState, setSlaState] = useState<"" | SlaState>("");
+  const [selectedViewId, setSelectedViewId] = useState("");
+  const [viewName, setViewName] = useState("");
+  const [viewVisibility, setViewVisibility] = useState<"private" | "shared">(
+    "private"
+  );
   const [notes, setNotes] = useState<Record<number, string>>({});
   const [resolutionReasons, setResolutionReasons] = useState<
     Record<number, string>
   >({});
   const canManage = user?.role === "manager" || user?.role === "admin";
+  const queueViews = trpc.queueViews.list.useQuery(undefined, {
+    enabled: Boolean(user),
+  });
   const records = trpc.risk.list.useQuery(
     {
       caseStatus: "under_review",
       assigneeId: queue === "mine" ? user?.openId : undefined,
       unassignedOnly: queue === "unassigned" || undefined,
       casePriority: priority || undefined,
+      slaState: slaState || undefined,
     },
     { enabled: Boolean(user) }
   );
@@ -2219,6 +4096,49 @@ export function CaseQueuesPage() {
     onError: () =>
       toast.message("A deterministic explanation is still available."),
   });
+  const createView = trpc.queueViews.create.useMutation({
+    onSuccess: async view => {
+      setViewName("");
+      setSelectedViewId(String(view.id));
+      await queueViews.refetch();
+      toast.success("Queue view saved");
+    },
+    onError: error =>
+      toast.error("Unable to save queue view", { description: error.message }),
+  });
+  const deleteView = trpc.queueViews.delete.useMutation({
+    onSuccess: async () => {
+      setSelectedViewId("");
+      await queueViews.refetch();
+      toast.success("Queue view deleted");
+    },
+    onError: error =>
+      toast.error("Unable to delete queue view", {
+        description: error.message,
+      }),
+  });
+  const applyView = (view: { id: number; filters: QueueViewFilters }) => {
+    setQueue(view.filters.queue);
+    setPriority(view.filters.priority ?? "");
+    setSlaState(view.filters.slaState ?? "");
+    setSelectedViewId(String(view.id));
+  };
+  const saveQueueView = () => {
+    const trimmedName = viewName.trim();
+    if (trimmedName.length < 2) {
+      toast.error("Name the queue view first");
+      return;
+    }
+    createView.mutate({
+      name: trimmedName,
+      visibility: viewVisibility,
+      filters: {
+        queue,
+        priority: priority || undefined,
+        slaState: slaState || undefined,
+      },
+    });
+  };
   const saveOutcome = (
     record: any,
     caseStatus: Exclude<CaseStatus, "under_review">
@@ -2250,8 +4170,7 @@ export function CaseQueuesPage() {
         | "other",
     });
   };
-  const isOverdue = (record: any) =>
-    record.dueAt && new Date(record.dueAt).getTime() < Date.now();
+  const isOverdue = (record: any) => record.slaState === "overdue";
   const busy =
     claim.isPending ||
     updateWorkflow.isPending ||
@@ -2376,6 +4295,83 @@ export function CaseQueuesPage() {
         </Panel>
       ) : null}
       <Panel>
+        <div className="mb-5 rounded-xl border border-cyan-300/10 bg-cyan-300/[0.035] p-4">
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+            <div className="min-w-0 flex-1">
+              <p className="flex items-center gap-2 text-sm font-semibold text-slate-100">
+                <Bookmark className="h-4 w-4 text-cyan-300" /> Saved queue views
+              </p>
+              <p className="mt-1 text-xs leading-5 text-slate-500">
+                Save the current queue, priority, and SLA filters for one-click
+                triage.
+              </p>
+              <div className="mt-3 flex flex-col gap-2 sm:flex-row">
+                <select
+                  aria-label="Saved queue views"
+                  value={selectedViewId}
+                  onChange={event => {
+                    const view = queueViews.data?.find(
+                      item => String(item.id) === event.target.value
+                    );
+                    if (view) applyView(view);
+                    else setSelectedViewId("");
+                  }}
+                  className="h-9 min-w-0 flex-1 rounded-md border border-white/10 bg-[#07111e] px-3 text-xs text-slate-200 outline-none focus:ring-2 focus:ring-cyan-300"
+                >
+                  <option value="">Choose a saved view</option>
+                  {queueViews.data?.map(view => (
+                    <option key={view.id} value={view.id}>
+                      {view.name} · {view.visibility}
+                    </option>
+                  ))}
+                </select>
+                {selectedViewId ? (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() =>
+                      deleteView.mutate({ id: Number(selectedViewId) })
+                    }
+                    disabled={deleteView.isPending}
+                    className="border-rose-300/20 bg-rose-300/[0.04] text-rose-200 hover:bg-rose-300/10"
+                  >
+                    <Trash2 className="mr-1.5 h-3.5 w-3.5" /> Delete view
+                  </Button>
+                ) : null}
+              </div>
+            </div>
+            <div className="flex flex-col gap-2 sm:flex-row">
+              <Input
+                aria-label="New queue view name"
+                value={viewName}
+                onChange={event => setViewName(event.target.value)}
+                placeholder="Name this view"
+                maxLength={80}
+                className="h-9 border-white/10 bg-[#07111e] text-xs text-slate-200 placeholder:text-slate-600 focus-visible:ring-cyan-300"
+              />
+              <select
+                aria-label="Queue view visibility"
+                value={viewVisibility}
+                onChange={event =>
+                  setViewVisibility(event.target.value as "private" | "shared")
+                }
+                className="h-9 rounded-md border border-white/10 bg-[#07111e] px-3 text-xs text-slate-200 outline-none focus:ring-2 focus:ring-cyan-300"
+              >
+                <option value="private">Private</option>
+                {canManage ? <option value="shared">Shared</option> : null}
+              </select>
+              <Button
+                size="sm"
+                onClick={saveQueueView}
+                disabled={createView.isPending}
+                className="bg-cyan-300 text-slate-950 hover:bg-cyan-200"
+              >
+                <BookmarkPlus className="mr-1.5 h-3.5 w-3.5" />
+                {createView.isPending ? "Saving…" : "Save view"}
+              </Button>
+            </div>
+          </div>
+        </div>
         <div className="mb-5 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
           <div className="flex flex-wrap gap-2">
             {(["all", "mine", "unassigned"] as const).map(item => (
@@ -2398,19 +4394,35 @@ export function CaseQueuesPage() {
               </Button>
             ))}
           </div>
-          <select
-            aria-label="Filter by priority"
-            value={priority}
-            onChange={event =>
-              setPriority(event.target.value as "" | CasePriority)
-            }
-            className="h-9 rounded-md border border-white/10 bg-[#07111e] px-3 text-xs text-slate-200 outline-none focus:ring-2 focus:ring-cyan-300"
-          >
-            <option value="">All priorities</option>
-            <option value="critical">Critical</option>
-            <option value="high">High</option>
-            <option value="standard">Standard</option>
-          </select>
+          <div className="flex flex-wrap gap-2">
+            <select
+              aria-label="Filter by priority"
+              value={priority}
+              onChange={event =>
+                setPriority(event.target.value as "" | CasePriority)
+              }
+              className="h-9 rounded-md border border-white/10 bg-[#07111e] px-3 text-xs text-slate-200 outline-none focus:ring-2 focus:ring-cyan-300"
+            >
+              <option value="">All priorities</option>
+              <option value="critical">Critical</option>
+              <option value="high">High</option>
+              <option value="standard">Standard</option>
+            </select>
+            <select
+              aria-label="Filter by SLA state"
+              value={slaState}
+              onChange={event =>
+                setSlaState(event.target.value as "" | SlaState)
+              }
+              className="h-9 rounded-md border border-white/10 bg-[#07111e] px-3 text-xs text-slate-200 outline-none focus:ring-2 focus:ring-cyan-300"
+            >
+              <option value="">All SLA states</option>
+              <option value="overdue">Overdue</option>
+              <option value="due_soon">Due soon</option>
+              <option value="on_track">On track</option>
+              <option value="no_deadline">No deadline</option>
+            </select>
+          </div>
         </div>
         {records.isLoading ? (
           <QueryState state="loading" label="Loading active case queue…" />
@@ -2436,6 +4448,9 @@ export function CaseQueuesPage() {
                       </p>
                       <RiskPill level={record.riskLevel} />
                       <PriorityPill priority={record.casePriority} />
+                      <SlaPill
+                        state={(record.slaState ?? "no_deadline") as SlaState}
+                      />
                       {isOverdue(record) ? (
                         <Badge
                           variant="outline"
@@ -2804,6 +4819,82 @@ export function AuditLogPage() {
   );
 }
 
+function RelatedActivityPanel({ caseId }: { caseId: number }) {
+  const [, setLocation] = useLocation();
+  const related = trpc.risk.relatedActivity.useQuery({ id: caseId });
+  const groups = (related.data ?? []).filter(
+    group => group.relatedTransactions.length > 0
+  );
+
+  return (
+    <Panel>
+      <div className="flex items-start gap-3">
+        <Link2 className="mt-0.5 h-5 w-5 text-cyan-300" />
+        <div>
+          <p className="text-sm font-semibold text-slate-100">
+            Related activity
+          </p>
+          <p className="mt-1 text-xs leading-5 text-slate-500">
+            Explainable links to other synthetic activity in this workspace. A
+            shared signal is context, not proof of fraud.
+          </p>
+        </div>
+      </div>
+      {related.isLoading ? (
+        <p className="mt-5 text-sm text-slate-500">Finding related activity…</p>
+      ) : related.error ? (
+        <p className="mt-5 text-sm text-rose-200">
+          Related activity is temporarily unavailable.
+        </p>
+      ) : groups.length === 0 ? (
+        <p className="mt-5 rounded-xl bg-white/[0.03] p-4 text-sm text-slate-500">
+          No related activity was found for the available synthetic signals.
+        </p>
+      ) : (
+        <div className="mt-5 grid gap-4 lg:grid-cols-3">
+          {groups.map(group => (
+            <div
+              key={`${group.entityType}-${group.displayLabel}`}
+              className="rounded-xl border border-white/[0.07] bg-[#07111e]/65 p-4"
+            >
+              <p className="text-xs font-semibold uppercase tracking-[0.12em] text-cyan-200">
+                {group.entityType.replace(/_/g, " ")}
+              </p>
+              <p className="mt-2 text-sm font-medium text-slate-200">
+                {group.displayLabel}
+              </p>
+              <p className="mt-1 text-xs leading-5 text-slate-500">
+                {group.relationship}
+              </p>
+              <div className="mt-4 space-y-2">
+                {group.relatedTransactions.map(transaction => (
+                  <button
+                    key={transaction.id}
+                    onClick={() =>
+                      setLocation(`/transactions/${transaction.id}`)
+                    }
+                    className="flex w-full items-center justify-between gap-3 rounded-lg border border-white/[0.06] bg-white/[0.025] px-3 py-2 text-left hover:bg-white/[0.07] focus:outline-none focus:ring-2 focus:ring-cyan-300"
+                  >
+                    <span className="min-w-0">
+                      <span className="block truncate font-mono text-[11px] text-slate-400">
+                        {transaction.reference}
+                      </span>
+                      <span className="mt-1 block truncate text-xs text-slate-200">
+                        {transaction.merchantName}
+                      </span>
+                    </span>
+                    <RiskPill level={transaction.riskLevel} />
+                  </button>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </Panel>
+  );
+}
+
 function CaseCollaborationPanel({ caseId }: { caseId: number }) {
   const utils = trpc.useUtils();
   const [comment, setComment] = useState("");
@@ -3142,7 +5233,7 @@ function CaseCollaborationPanel({ caseId }: { caseId: number }) {
                   key={item.id}
                   href={item.url}
                   target="_blank"
-                  rel="noreferrer"
+                  rel="noreferrer noopener"
                   className="flex items-center justify-between gap-3 rounded-lg border border-white/[0.07] bg-[#07111e]/65 px-3 py-2.5 text-sm text-slate-300 transition hover:border-cyan-300/25 hover:text-cyan-200"
                 >
                   <span className="min-w-0 truncate">
@@ -3164,6 +5255,10 @@ function CaseCollaborationPanel({ caseId }: { caseId: number }) {
           <p className="text-sm font-semibold text-slate-100">
             Saved evidence links
           </p>
+          <p className="mt-1 text-xs leading-5 text-amber-100/70">
+            These destinations are external to FraudLens. Verify the domain
+            before signing in or sharing information.
+          </p>
           <div className="mt-3 space-y-2">
             {data?.evidence.filter(item => item.evidenceType === "link")
               .length ? (
@@ -3174,7 +5269,7 @@ function CaseCollaborationPanel({ caseId }: { caseId: number }) {
                     key={item.id}
                     href={item.url}
                     target="_blank"
-                    rel="noreferrer"
+                    rel="noreferrer noopener"
                     className="flex items-center justify-between gap-3 rounded-lg border border-white/[0.07] bg-[#07111e]/65 px-3 py-2.5 text-sm text-slate-300 transition hover:border-cyan-300/25 hover:text-cyan-200"
                   >
                     <span className="min-w-0 truncate">
@@ -3211,9 +5306,17 @@ function CaseCollaborationPanel({ caseId }: { caseId: number }) {
             data.activity.map(item => (
               <div key={item.id} className="relative">
                 <span className="absolute -left-[21px] top-1 h-2.5 w-2.5 rounded-full border-2 border-[#0c1a28] bg-cyan-300" />
-                <p className="text-sm leading-5 text-slate-300">
-                  {item.summary}
-                </p>
+                <div className="flex flex-wrap items-center gap-2">
+                  <Badge
+                    variant="outline"
+                    className={`px-2 py-0.5 text-[9px] uppercase tracking-[0.12em] ${auditTone(item.eventType)}`}
+                  >
+                    {auditLabel(item.eventType)}
+                  </Badge>
+                  <p className="text-sm leading-5 text-slate-300">
+                    {item.summary}
+                  </p>
+                </div>
                 <p className="mt-1 text-xs text-slate-600">
                   {item.actorName || item.actorId || "System"} ·{" "}
                   {date(item.createdAt)}
@@ -3235,14 +5338,30 @@ export function TransactionImportPage() {
   const { user } = useAuth();
   const [, setLocation] = useLocation();
   const utils = trpc.useUtils();
+  const importHistory = trpc.risk.importHistory.useQuery(undefined, {
+    enabled: user?.role !== "analyst",
+  });
   const [file, setFile] = useState<File | null>(null);
   const [fileError, setFileError] = useState<string | null>(null);
   const [result, setResult] = useState<any>(null);
+  const [preview, setPreview] = useState<any>(null);
+  const previewCsv = trpc.risk.previewCsv.useMutation({
+    onSuccess: response => {
+      setPreview(response);
+      setResult(null);
+      toast.success("CSV preview ready", {
+        description: `${response.readyRows} row${response.readyRows === 1 ? " is" : "s are"} ready to import; duplicates and invalid rows will be skipped.`,
+      });
+    },
+    onError: error =>
+      toast.error("Preview failed", { description: error.message }),
+  });
   const importCsv = trpc.risk.importCsv.useMutation({
     onSuccess: response => {
       setResult(response);
       utils.risk.overview.invalidate();
       utils.risk.list.invalidate();
+      utils.risk.importHistory.invalidate();
       if (response.imported) {
         toast.success("Transaction import complete", {
           description: `${response.imported} transaction${response.imported === 1 ? "" : "s"} scored and added to this workspace.`,
@@ -3260,6 +5379,7 @@ export function TransactionImportPage() {
 
   const chooseFile = (selected: File | null) => {
     setResult(null);
+    setPreview(null);
     if (!selected) {
       setFile(null);
       setFileError(null);
@@ -3295,14 +5415,35 @@ export function TransactionImportPage() {
       reader.readAsDataURL(selected);
     });
 
-  const upload = async () => {
+  const previewUpload = async () => {
     if (!file) {
-      setFileError("Choose a CSV file before importing.");
+      setFileError("Choose a CSV file before previewing.");
       return;
     }
     try {
       const contentBase64 = await readAsBase64(file);
-      importCsv.mutate({ fileName: file.name, contentBase64 });
+      previewCsv.mutate({ fileName: file.name, contentBase64 });
+    } catch (error) {
+      toast.error(
+        error instanceof Error
+          ? error.message
+          : "The selected file could not be read."
+      );
+    }
+  };
+
+  const commitImport = async () => {
+    if (!file || !preview?.batchId) {
+      setFileError("Preview the selected CSV before importing.");
+      return;
+    }
+    try {
+      const contentBase64 = await readAsBase64(file);
+      importCsv.mutate({
+        fileName: file.name,
+        contentBase64,
+        batchId: preview.batchId,
+      });
     } catch (error) {
       toast.error(
         error instanceof Error
@@ -3413,15 +5554,81 @@ export function TransactionImportPage() {
               ) : null}
             </div>
             <Button
-              onClick={upload}
-              disabled={!file || importCsv.isPending}
+              onClick={previewUpload}
+              disabled={!file || previewCsv.isPending || importCsv.isPending}
               className="mt-5 w-full bg-cyan-300 text-slate-950 hover:bg-cyan-200"
             >
-              {importCsv.isPending
-                ? "Validating and scoring…"
-                : "Validate and import transactions"}
+              {previewCsv.isPending ? "Previewing rows…" : "Preview import"}
               <ArrowRight className="ml-2 h-4 w-4" />
             </Button>
+            {preview ? (
+              <div className="mt-5 rounded-xl border border-cyan-300/15 bg-cyan-300/[0.04] p-4">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="text-sm font-semibold text-slate-100">
+                      Preview batch #{preview.batchId}
+                    </p>
+                    <p className="mt-1 text-xs leading-5 text-slate-500">
+                      {preview.readyRows} ready · {preview.invalidRows} invalid
+                      · {preview.duplicates} duplicate
+                      {preview.duplicates === 1 ? "" : "s"}
+                    </p>
+                  </div>
+                  <Badge
+                    variant="outline"
+                    className="border-cyan-300/20 bg-cyan-300/10 text-cyan-200"
+                  >
+                    Commit-bound
+                  </Badge>
+                </div>
+                {preview.sampleRows?.length ? (
+                  <div className="mt-4 space-y-2">
+                    {preview.sampleRows.slice(0, 8).map((row: any) => (
+                      <div
+                        key={`${row.row}-${row.reference}`}
+                        className="flex items-center justify-between gap-3 rounded-lg border border-white/[0.06] bg-[#07111e] px-3 py-2"
+                      >
+                        <span className="min-w-0">
+                          <span className="block font-mono text-[11px] text-slate-500">
+                            Row {row.row} · {row.reference}
+                          </span>
+                          <span className="mt-1 block truncate text-xs text-slate-300">
+                            {row.merchantCategory} · {money(row.amount)}
+                          </span>
+                        </span>
+                        <RiskPill level={row.riskLevel} />
+                      </div>
+                    ))}
+                  </div>
+                ) : null}
+                {preview.errors?.length ? (
+                  <div className="mt-4 rounded-lg border border-amber-300/15 bg-amber-300/[0.04] p-3">
+                    <p className="text-xs font-semibold text-amber-100">
+                      First validation issues
+                    </p>
+                    <div className="mt-2 space-y-1">
+                      {preview.errors.slice(0, 5).map((error: any) => (
+                        <p
+                          key={`${error.row}-${error.field}-${error.message}`}
+                          className="text-xs leading-5 text-amber-100/75"
+                        >
+                          Row {error.row} · {error.field}: {error.message}
+                        </p>
+                      ))}
+                    </div>
+                  </div>
+                ) : null}
+                <Button
+                  onClick={commitImport}
+                  disabled={!preview.readyRows || importCsv.isPending}
+                  className="mt-4 w-full bg-emerald-300 text-slate-950 hover:bg-emerald-200"
+                >
+                  {importCsv.isPending
+                    ? "Importing ready rows…"
+                    : `Import ${preview.readyRows} ready row${preview.readyRows === 1 ? "" : "s"}`}
+                </Button>
+              </div>
+            ) : null}
           </Panel>
           <Panel>
             <Eyebrow>Required columns</Eyebrow>
@@ -3456,6 +5663,57 @@ export function TransactionImportPage() {
               references within the file are skipped and reported. Identical
               references in another workspace remain isolated.
             </p>
+          </Panel>
+          <Panel>
+            <div className="flex items-center justify-between gap-4">
+              <div>
+                <Eyebrow>Recent import batches</Eyebrow>
+                <p className="mt-1 text-xs leading-5 text-slate-500">
+                  Organization-scoped preview and commit outcomes. Raw CSV
+                  content is never retained.
+                </p>
+              </div>
+              <History className="h-5 w-5 text-cyan-300" />
+            </div>
+            <div className="mt-4 space-y-2">
+              {importHistory.isLoading ? (
+                <p className="text-sm text-slate-500">
+                  Loading import history…
+                </p>
+              ) : importHistory.data?.length ? (
+                importHistory.data.slice(0, 5).map(batch => (
+                  <div
+                    key={batch.id}
+                    className="flex items-center justify-between gap-3 rounded-lg border border-white/[0.06] bg-white/[0.025] p-3"
+                  >
+                    <div className="min-w-0">
+                      <p className="truncate text-sm text-slate-200">
+                        {batch.fileName}
+                      </p>
+                      <p className="mt-1 text-xs text-slate-500">
+                        {batch.importedRows || batch.readyRows} ready/imported ·{" "}
+                        {batch.invalidRows} invalid · {batch.duplicateRows}{" "}
+                        duplicates
+                      </p>
+                    </div>
+                    <Badge
+                      variant="outline"
+                      className={
+                        batch.status === "completed"
+                          ? "border-emerald-300/20 bg-emerald-300/10 text-emerald-200"
+                          : "border-cyan-300/20 bg-cyan-300/10 text-cyan-200"
+                      }
+                    >
+                      {batch.status}
+                    </Badge>
+                  </div>
+                ))
+              ) : (
+                <p className="text-sm text-slate-500">
+                  No import batches recorded yet.
+                </p>
+              )}
+            </div>
           </Panel>
         </div>
         <div className="space-y-6">
@@ -4196,6 +6454,8 @@ export function ReportsPage() {
     return dateInput(value);
   });
   const [dateTo, setDateTo] = useState(() => dateInput(new Date()));
+  const [exportReason, setExportReason] = useState("");
+  const [exportRowLimit, setExportRowLimit] = useState("500");
   const filters = {
     riskLevel: (riskLevel || undefined) as RiskLevel | undefined,
     caseStatus: (caseStatus || undefined) as CaseStatus | undefined,
@@ -4267,9 +6527,18 @@ export function ReportsPage() {
     setDateFrom(dateInput(from));
     setDateTo(dateInput(new Date()));
   };
+  const exportRequest = {
+    filters,
+    reason: exportReason.trim(),
+    rowLimit: Number(exportRowLimit),
+  };
   const exportDisabled =
     !data ||
     dateRangeError ||
+    exportRequest.reason.length < 5 ||
+    !Number.isInteger(exportRequest.rowLimit) ||
+    exportRequest.rowLimit < 1 ||
+    exportRequest.rowLimit > 1000 ||
     csvDownload.isPending ||
     summaryDownload.isPending;
 
@@ -4279,7 +6548,7 @@ export function ReportsPage() {
         <div className="flex flex-wrap gap-2">
           <Button
             variant="outline"
-            onClick={() => summaryDownload.mutate(filters)}
+            onClick={() => summaryDownload.mutate(exportRequest)}
             disabled={exportDisabled}
             className="border-white/10 bg-white/[0.035] text-slate-200 hover:bg-white/[0.08] hover:text-white"
           >
@@ -4287,7 +6556,7 @@ export function ReportsPage() {
             {summaryDownload.isPending ? "Preparing…" : "Download summary"}
           </Button>
           <Button
-            onClick={() => csvDownload.mutate(filters)}
+            onClick={() => csvDownload.mutate(exportRequest)}
             disabled={exportDisabled}
             className="bg-cyan-300 text-slate-950 hover:bg-cyan-200"
           >
@@ -4368,9 +6637,61 @@ export function ReportsPage() {
             className="border-white/10 bg-[#07111e] text-slate-200 focus-visible:ring-cyan-300"
           />
         </div>
+        <div className="mt-5 grid gap-4 md:grid-cols-[minmax(0,1fr)_180px]">
+          <div>
+            <label
+              htmlFor="report-export-reason"
+              className="text-xs font-medium text-slate-400"
+            >
+              Export reason <span className="text-cyan-300">Required</span>
+            </label>
+            <Textarea
+              id="report-export-reason"
+              value={exportReason}
+              onChange={event => setExportReason(event.target.value)}
+              maxLength={300}
+              rows={2}
+              placeholder="For example: quarterly investigator review"
+              className="mt-2 border-white/10 bg-[#07111e] text-sm text-slate-200 placeholder:text-slate-600 focus-visible:ring-cyan-300"
+            />
+            <p className="mt-1 text-xs text-slate-600">
+              This reason is recorded with the export audit event. Do not enter
+              sensitive customer data.
+            </p>
+          </div>
+          <div>
+            <label
+              htmlFor="report-export-row-limit"
+              className="text-xs font-medium text-slate-400"
+            >
+              Maximum rows
+            </label>
+            <Input
+              id="report-export-row-limit"
+              type="number"
+              min={1}
+              max={1000}
+              step={1}
+              value={exportRowLimit}
+              onChange={event => setExportRowLimit(event.target.value)}
+              className="mt-2 border-white/10 bg-[#07111e] text-slate-200 focus-visible:ring-cyan-300"
+            />
+            <p className="mt-1 text-xs text-slate-600">1–1,000 rows</p>
+          </div>
+        </div>
         {dateRangeError ? (
           <p className="mt-3 text-sm text-rose-200">
             The report end date must be on or after the start date.
+          </p>
+        ) : exportReason.trim().length > 0 && exportReason.trim().length < 5 ? (
+          <p className="mt-3 text-sm text-rose-200">
+            Enter at least five characters describing why this export is needed.
+          </p>
+        ) : !Number.isInteger(Number(exportRowLimit)) ||
+          Number(exportRowLimit) < 1 ||
+          Number(exportRowLimit) > 1000 ? (
+          <p className="mt-3 text-sm text-rose-200">
+            Export row limit must be a whole number between 1 and 1,000.
           </p>
         ) : (
           <p className="mt-3 text-xs text-slate-500">
@@ -4775,10 +7096,23 @@ export function ApiIntegrationsPage() {
       </Frame>
     );
 
+  const requestEntries = requestLogs.data ?? [];
+  const requestSummary = {
+    total: requestEntries.length,
+    successful: requestEntries.filter(entry => entry.responseStatus < 400)
+      .length,
+    rejected: requestEntries.filter(entry => entry.responseStatus >= 400)
+      .length,
+    rateLimited: requestEntries.filter(entry => entry.responseStatus === 429)
+      .length,
+    duplicates: requestEntries.filter(entry => entry.responseStatus === 409)
+      .length,
+  };
   const baseUrl = window.location.origin;
   const endpoint = `${baseUrl}/api/v1/transactions/assess`;
   const sampleRequest = `curl -X POST ${endpoint} \\
   -H "Authorization: Bearer fl_live_…" \\
+  -H "Idempotency-Key: PAYMENT-10001-attempt-1" \\
   -H "Content-Type: application/json" \\
   -d '{
     "reference": "PAYMENT-10001",
@@ -4815,6 +7149,25 @@ export function ApiIntegrationsPage() {
         key grants permission to submit risk assessments for this organization.
         Copy a new key once, store it in the integration’s secret manager, and
         revoke it immediately if it is exposed.
+      </div>
+      <div className="mb-6 grid gap-3 sm:grid-cols-3">
+        {[
+          ["Recent requests", requestSummary.total, "text-cyan-200"],
+          ["Accepted", requestSummary.successful, "text-emerald-200"],
+          ["Rejected / duplicate", requestSummary.rejected, "text-amber-200"],
+        ].map(([label, value, tone]) => (
+          <Panel key={String(label)} className="p-4">
+            <p className="text-xs text-slate-500">{label}</p>
+            <p className={`mt-2 text-2xl font-semibold ${tone}`}>{value}</p>
+            <p className="mt-1 text-[11px] text-slate-600">
+              {label === "Recent requests"
+                ? "Latest 50 logged attempts"
+                : label === "Accepted"
+                  ? `${requestSummary.rateLimited} rate-limited`
+                  : `${requestSummary.duplicates} duplicate responses`}
+            </p>
+          </Panel>
+        ))}
       </div>
       <div className="grid gap-6 xl:grid-cols-[0.72fr_1.28fr]">
         <div className="space-y-6">
@@ -4921,7 +7274,7 @@ export function ApiIntegrationsPage() {
               <a
                 href={`${baseUrl}/api/v1/docs`}
                 target="_blank"
-                rel="noreferrer"
+                rel="noreferrer noopener"
                 className="inline-flex h-9 items-center justify-center rounded-md border border-white/10 bg-white/[0.035] px-3 text-xs font-semibold text-slate-200 hover:bg-white/[0.08] hover:text-white"
               >
                 Open JSON docs
@@ -4944,7 +7297,9 @@ export function ApiIntegrationsPage() {
               <span className="font-mono text-slate-400">merchantCategory</span>
               , country codes, device status, transaction hour, and recent
               transaction count. The optional reference prevents duplicate
-              submissions within this workspace.
+              submissions within this workspace. For safe retries, send the same
+              <span className="font-mono text-slate-400">Idempotency-Key</span>;
+              an identical request replays its original response for 24 hours.
             </p>
           </Panel>
           <Panel>

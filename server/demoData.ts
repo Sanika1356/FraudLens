@@ -1,4 +1,9 @@
-import { CaseStatus, RiskInput, scoreTransaction } from "./riskEngine";
+import {
+  CaseStatus,
+  PolicySignal,
+  RiskInput,
+  scoreTransaction,
+} from "./riskEngine";
 
 export type RiskRecord = RiskInput & {
   id: number;
@@ -18,6 +23,8 @@ export type RiskRecord = RiskInput & {
   riskLevel: ReturnType<typeof scoreTransaction>["riskLevel"];
   probability: number;
   factors: ReturnType<typeof scoreTransaction>["factors"];
+  policySignals: PolicySignal[];
+  policyVersion: string;
   deterministicExplanation: string;
 };
 
@@ -27,6 +34,8 @@ const definitions: Array<
     | "riskLevel"
     | "probability"
     | "factors"
+    | "policySignals"
+    | "policyVersion"
     | "deterministicExplanation"
     | "llmSummary"
     | "llmNextStep"
@@ -204,7 +213,13 @@ const definitions: Array<
 
 export const demoTransactions: RiskRecord[] = definitions.map(definition => {
   const decision = scoreTransaction(definition);
-  return { ...definition, ...decision, llmSummary: null, llmNextStep: null };
+  return {
+    ...definition,
+    ...decision,
+    policyVersion: "v1",
+    llmSummary: null,
+    llmNextStep: null,
+  };
 });
 
 export const driftDemo = [

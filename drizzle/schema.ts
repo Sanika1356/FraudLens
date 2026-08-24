@@ -24,6 +24,115 @@ export const users = mysqlTable("users", {
   lastSignedIn: timestamp("lastSignedIn").defaultNow().notNull(),
 });
 
+export const organizationRoles = mysqlTable(
+  "organizationRoles",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    /** FraudLens application role scoped to one Clerk organization and user. */
+    orgId: varchar("orgId", { length: 64 }).notNull(),
+    openId: varchar("openId", { length: 64 }).notNull(),
+    role: mysqlEnum("role", ["analyst", "manager", "admin"])
+      .default("analyst")
+      .notNull(),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+  },
+  table => [
+    uniqueIndex("organization_roles_org_open_unique").on(
+      table.orgId,
+      table.openId
+    ),
+    index("organization_roles_org_idx").on(table.orgId),
+  ]
+);
+
+export const riskPolicyVersions = mysqlTable(
+  "riskPolicyVersions",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    orgId: varchar("orgId", { length: 64 }).notNull(),
+    version: int("version").notNull(),
+    status: mysqlEnum("status", ["draft", "active", "retired"]).notNull(),
+    configJson: text("configJson").notNull(),
+    changeNote: varchar("changeNote", { length: 500 }).notNull(),
+    createdById: varchar("createdById", { length: 64 }),
+    createdByName: varchar("createdByName", { length: 160 }),
+    approvedById: varchar("approvedById", { length: 64 }),
+    approvedByName: varchar("approvedByName", { length: 160 }),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    approvedAt: timestamp("approvedAt"),
+  },
+  table => [
+    uniqueIndex("risk_policy_versions_org_version_unique").on(
+      table.orgId,
+      table.version
+    ),
+    index("risk_policy_versions_org_status_idx").on(table.orgId, table.status),
+  ]
+);
+
+export const retentionPolicyVersions = mysqlTable(
+  "retentionPolicyVersions",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    orgId: varchar("orgId", { length: 64 }).notNull(),
+    version: int("version").notNull(),
+    status: mysqlEnum("status", ["draft", "active", "retired"]).notNull(),
+    transactionRetentionDays: int("transactionRetentionDays").notNull(),
+    evidenceRetentionDays: int("evidenceRetentionDays").notNull(),
+    auditRetentionDays: int("auditRetentionDays").notNull(),
+    effectiveAt: timestamp("effectiveAt").notNull(),
+    changeNote: varchar("changeNote", { length: 500 }).notNull(),
+    createdById: varchar("createdById", { length: 64 }),
+    createdByName: varchar("createdByName", { length: 160 }),
+    approvedById: varchar("approvedById", { length: 64 }),
+    approvedByName: varchar("approvedByName", { length: 160 }),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    approvedAt: timestamp("approvedAt"),
+  },
+  table => [
+    uniqueIndex("retention_policy_versions_org_version_unique").on(
+      table.orgId,
+      table.version
+    ),
+    index("retention_policy_versions_org_status_idx").on(
+      table.orgId,
+      table.status
+    ),
+  ]
+);
+export const modelRegistryVersions = mysqlTable(
+  "modelRegistryVersions",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    orgId: varchar("orgId", { length: 64 }).notNull(),
+    modelKey: varchar("modelKey", { length: 80 }).notNull(),
+    version: varchar("version", { length: 40 }).notNull(),
+    status: mysqlEnum("status", [
+      "champion",
+      "challenger",
+      "retired",
+    ]).notNull(),
+    artifactHash: varchar("artifactHash", { length: 128 }).notNull(),
+    datasetLabel: varchar("datasetLabel", { length: 250 }).notNull(),
+    evaluationJson: text("evaluationJson").notNull(),
+    changeNote: varchar("changeNote", { length: 500 }).notNull(),
+    createdById: varchar("createdById", { length: 64 }),
+    createdByName: varchar("createdByName", { length: 160 }),
+    approvedById: varchar("approvedById", { length: 64 }),
+    approvedByName: varchar("approvedByName", { length: 160 }),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    approvedAt: timestamp("approvedAt"),
+  },
+  table => [
+    uniqueIndex("model_registry_org_key_version_unique").on(
+      table.orgId,
+      table.modelKey,
+      table.version
+    ),
+    index("model_registry_org_status_idx").on(table.orgId, table.status),
+  ]
+);
 export const transactions = mysqlTable(
   "transactions",
   {
@@ -41,6 +150,12 @@ export const transactions = mysqlTable(
     riskLabel: mysqlEnum("riskLabel", ["low", "medium", "high"]).notNull(),
     riskProbability: int("riskProbability").notNull(),
     factorJson: text("factorJson").notNull(),
+    /** Derived operational signals; these do not change the authoritative model score. */
+    policySignalJson: text("policySignalJson").notNull().default("[]"),
+    /** Version of the approved policy used when this assessment was created. */
+    policyVersion: varchar("policyVersion", { length: 32 })
+      .notNull()
+      .default("v1"),
     deterministicExplanation: text("deterministicExplanation").notNull(),
     llmSummary: text("llmSummary"),
     llmNextStep: text("llmNextStep"),
@@ -69,6 +184,81 @@ export const transactions = mysqlTable(
     uniqueIndex("transactions_org_reference_unique").on(
       table.orgId,
       table.reference
+    ),
+  ]
+);
+
+export const caseChecklistItems = mysqlTable(
+  "caseChecklistItems",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    orgId: varchar("orgId", { length: 64 }).notNull(),
+    transactionId: int("transactionId").notNull(),
+    itemKey: varchar("itemKey", { length: 64 }).notNull(),
+    completed: boolean("completed").default(false).notNull(),
+    note: varchar("note", { length: 500 }).notNull().default(""),
+    completedById: varchar("completedById", { length: 64 }),
+    completedByName: varchar("completedByName", { length: 160 }),
+    completedAt: timestamp("completedAt"),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+  },
+  table => [
+    uniqueIndex("case_checklist_org_transaction_key_unique").on(
+      table.orgId,
+      table.transactionId,
+      table.itemKey
+    ),
+    index("case_checklist_org_transaction_idx").on(
+      table.orgId,
+      table.transactionId
+    ),
+  ]
+);
+
+export const riskEntities = mysqlTable(
+  "riskEntities",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    orgId: varchar("orgId", { length: 64 }).notNull(),
+    entityType: mysqlEnum("entityType", [
+      "merchant_category",
+      "country_route",
+      "device_cohort",
+    ]).notNull(),
+    entityKey: varchar("entityKey", { length: 128 }).notNull(),
+    displayLabel: varchar("displayLabel", { length: 160 }).notNull(),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+  },
+  table => [
+    uniqueIndex("risk_entities_org_type_key_unique").on(
+      table.orgId,
+      table.entityType,
+      table.entityKey
+    ),
+    index("risk_entities_org_idx").on(table.orgId),
+  ]
+);
+
+export const transactionEntityLinks = mysqlTable(
+  "transactionEntityLinks",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    orgId: varchar("orgId", { length: 64 }).notNull(),
+    transactionId: int("transactionId").notNull(),
+    entityId: int("entityId").notNull(),
+    relationship: varchar("relationship", { length: 120 }).notNull(),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+  },
+  table => [
+    uniqueIndex("transaction_entity_links_unique").on(
+      table.orgId,
+      table.transactionId,
+      table.entityId
+    ),
+    index("transaction_entity_links_org_entity_idx").on(
+      table.orgId,
+      table.entityId
     ),
   ]
 );
@@ -136,6 +326,17 @@ export const notificationPreferences = mysqlTable("notificationPreferences", {
   /** Power Automate/Teams workflow URL. Legacy connector URLs are not required. */
   teamsWebhookUrl: varchar("teamsWebhookUrl", { length: 2048 }),
   riskThreshold: int("riskThreshold").default(80).notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export const organizationControls = mysqlTable("organizationControls", {
+  id: int("id").autoincrement().primaryKey(),
+  orgId: varchar("orgId", { length: 64 }).notNull().unique(),
+  incidentMode: boolean("incidentMode").default(false).notNull(),
+  incidentNote: varchar("incidentNote", { length: 500 }),
+  incidentActivatedById: varchar("incidentActivatedById", { length: 64 }),
+  incidentActivatedByName: varchar("incidentActivatedByName", { length: 160 }),
+  incidentActivatedAt: timestamp("incidentActivatedAt"),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });
 
@@ -227,6 +428,88 @@ export const apiRequestLogs = mysqlTable(
   ]
 );
 
+export const savedQueueViews = mysqlTable(
+  "savedQueueViews",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    /** Organization-scoped queue view ownership. */
+    orgId: varchar("orgId", { length: 64 }).notNull(),
+    ownerId: varchar("ownerId", { length: 64 }).notNull(),
+    name: varchar("name", { length: 80 }).notNull(),
+    visibility: mysqlEnum("visibility", ["private", "shared"])
+      .default("private")
+      .notNull(),
+    filtersJson: varchar("filtersJson", { length: 2000 }).notNull(),
+    createdByName: varchar("createdByName", { length: 160 }),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+  },
+  table => [
+    index("saved_queue_views_org_idx").on(table.orgId, table.updatedAt),
+    uniqueIndex("saved_queue_views_org_owner_name_unique").on(
+      table.orgId,
+      table.ownerId,
+      table.name
+    ),
+  ]
+);
+
+export const apiIdempotencyKeys = mysqlTable(
+  "apiIdempotencyKeys",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    /** API-key-scoped replay protection; orgId is retained for tenant audits. */
+    orgId: varchar("orgId", { length: 64 }).notNull(),
+    apiKeyId: int("apiKeyId").notNull(),
+    idempotencyKey: varchar("idempotencyKey", { length: 128 }).notNull(),
+    requestHash: varchar("requestHash", { length: 64 }).notNull(),
+    status: mysqlEnum("status", ["processing", "completed"])
+      .default("processing")
+      .notNull(),
+    responseStatus: int("responseStatus"),
+    responseJson: text("responseJson"),
+    transactionReference: varchar("transactionReference", { length: 32 }),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    expiresAt: timestamp("expiresAt").notNull(),
+  },
+  table => [
+    uniqueIndex("api_idempotency_key_unique").on(
+      table.apiKeyId,
+      table.idempotencyKey
+    ),
+    index("api_idempotency_org_created_idx").on(table.orgId, table.createdAt),
+  ]
+);
+
+export const transactionImportBatches = mysqlTable(
+  "transactionImportBatches",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    orgId: varchar("orgId", { length: 64 }).notNull(),
+    fileName: varchar("fileName", { length: 255 }).notNull(),
+    contentHash: varchar("contentHash", { length: 64 }).notNull(),
+    status: mysqlEnum("status", ["previewed", "completed", "failed"])
+      .default("previewed")
+      .notNull(),
+    totalRows: int("totalRows").notNull(),
+    readyRows: int("readyRows").notNull(),
+    importedRows: int("importedRows").default(0).notNull(),
+    invalidRows: int("invalidRows").default(0).notNull(),
+    duplicateRows: int("duplicateRows").default(0).notNull(),
+    errorsJson: text("errorsJson").notNull().default("[]"),
+    createdById: varchar("createdById", { length: 64 }),
+    createdByName: varchar("createdByName", { length: 160 }),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    completedAt: timestamp("completedAt"),
+  },
+  table => [
+    index("transaction_import_batches_org_idx").on(
+      table.orgId,
+      table.createdAt
+    ),
+  ]
+);
+
 export const weeklySummaryPreferences = mysqlTable("weeklySummaryPreferences", {
   id: int("id").autoincrement().primaryKey(),
   /** Exactly one weekly-summary configuration is permitted per organization. */
@@ -292,16 +575,43 @@ export type User = typeof users.$inferSelect;
 export type InsertUser = typeof users.$inferInsert;
 export type Transaction = typeof transactions.$inferSelect;
 export type InsertTransaction = typeof transactions.$inferInsert;
+export type ModelRegistryVersion = typeof modelRegistryVersions.$inferSelect;
+export type InsertModelRegistryVersion =
+  typeof modelRegistryVersions.$inferInsert;
+export type RiskPolicyVersion = typeof riskPolicyVersions.$inferSelect;
+export type InsertRiskPolicyVersion = typeof riskPolicyVersions.$inferInsert;
+export type RetentionPolicyVersion =
+  typeof retentionPolicyVersions.$inferSelect;
+export type InsertRetentionPolicyVersion =
+  typeof retentionPolicyVersions.$inferInsert;
+export type CaseChecklistItem = typeof caseChecklistItems.$inferSelect;
+export type InsertCaseChecklistItem = typeof caseChecklistItems.$inferInsert;
+export type RiskEntity = typeof riskEntities.$inferSelect;
+export type InsertRiskEntity = typeof riskEntities.$inferInsert;
+export type TransactionEntityLink = typeof transactionEntityLinks.$inferSelect;
+export type InsertTransactionEntityLink =
+  typeof transactionEntityLinks.$inferInsert;
 export type NotificationPreferences =
   typeof notificationPreferences.$inferSelect;
 export type InsertNotificationPreferences =
   typeof notificationPreferences.$inferInsert;
+export type OrganizationControls = typeof organizationControls.$inferSelect;
+export type InsertOrganizationControls =
+  typeof organizationControls.$inferInsert;
 export type OutcomeFeedback = typeof outcomeFeedback.$inferSelect;
 export type InsertOutcomeFeedback = typeof outcomeFeedback.$inferInsert;
 export type ApiKey = typeof apiKeys.$inferSelect;
 export type InsertApiKey = typeof apiKeys.$inferInsert;
 export type ApiRequestLog = typeof apiRequestLogs.$inferSelect;
 export type InsertApiRequestLog = typeof apiRequestLogs.$inferInsert;
+export type TransactionImportBatch =
+  typeof transactionImportBatches.$inferSelect;
+export type InsertTransactionImportBatch =
+  typeof transactionImportBatches.$inferInsert;
+export type SavedQueueView = typeof savedQueueViews.$inferSelect;
+export type InsertSavedQueueView = typeof savedQueueViews.$inferInsert;
+export type ApiIdempotencyKey = typeof apiIdempotencyKeys.$inferSelect;
+export type InsertApiIdempotencyKey = typeof apiIdempotencyKeys.$inferInsert;
 export type WeeklySummaryPreferences =
   typeof weeklySummaryPreferences.$inferSelect;
 export type InsertWeeklySummaryPreferences =

@@ -6,12 +6,14 @@ type AuthenticatedUser = NonNullable<TrpcContext["user"]>;
 
 function createContext(
   user: AuthenticatedUser | null,
-  orgId: string | null = "org_fraudlens_demo"
+  orgId: string | null = "org_fraudlens_demo",
+  appRole?: AuthenticatedUser["role"]
 ): TrpcContext {
   return {
     user,
     orgId,
     orgRole: orgId ? "org:admin" : null,
+    appRole,
     req: { headers: {} } as TrpcContext["req"],
     res: {} as TrpcContext["res"],
   };
@@ -49,6 +51,75 @@ describe("Clerk-protected FraudLens APIs", () => {
       code: "UNAUTHORIZED",
       message: "Select an active organization workspace to access this data.",
     });
+  });
+
+  it("uses the active organization role instead of a stale global user role", async () => {
+    const adminWithAnalystWorkspaceRole = appRouter.createCaller(
+      createContext(createUser("admin"), "org_role_boundary", "analyst")
+    );
+    const analystWithManagerWorkspaceRole = appRouter.createCaller(
+      createContext(createUser("analyst"), "org_role_boundary", "manager")
+    );
+
+    await expect(
+      adminWithAnalystWorkspaceRole.risk.modelHealth()
+    ).rejects.toMatchObject({ code: "FORBIDDEN" });
+    await expect(
+      analystWithManagerWorkspaceRole.risk.modelHealth()
+    ).resolves.toBeDefined();
+  });
+
+  it("restricts project-owner notifications to organization administrators", async () => {
+    const analyst = appRouter.createCaller(
+      createContext(createUser("analyst"), "org_owner_notification")
+    );
+    const manager = appRouter.createCaller(
+      createContext(createUser("manager"), "org_owner_notification")
+    );
+    const orgMemberAdmin = appRouter.createCaller({
+      ...createContext(createUser("admin"), "org_owner_notification"),
+      orgRole: "org:member",
+    } as TrpcContext);
+
+    const input = { title: "Test", content: "Test notification" };
+    await expect(analyst.system.notifyOwner(input)).rejects.toMatchObject({
+      code: "FORBIDDEN",
+    });
+    await expect(manager.system.notifyOwner(input)).rejects.toMatchObject({
+      code: "FORBIDDEN",
+    });
+    await expect(
+      orgMemberAdmin.system.notifyOwner(input)
+    ).rejects.toMatchObject({ code: "FORBIDDEN" });
+  });
+
+  it("restricts access-review completion to FraudLens and Clerk administrators", async () => {
+    const analyst = appRouter.createCaller(
+      createContext(createUser("analyst"), "org_security_review", "analyst")
+    );
+    const manager = appRouter.createCaller(
+      createContext(createUser("manager"), "org_security_review", "manager")
+    );
+    const orgMemberAdmin = appRouter.createCaller({
+      ...createContext(createUser("admin"), "org_security_review", "admin"),
+      orgRole: "org:member",
+    } as TrpcContext);
+    const administrator = appRouter.createCaller(
+      createContext(createUser("admin"), "org_security_review", "admin")
+    );
+
+    await expect(
+      analyst.security.completeAccessReview({ note: "Review" })
+    ).rejects.toMatchObject({ code: "FORBIDDEN" });
+    await expect(
+      manager.security.completeAccessReview({ note: "Review" })
+    ).rejects.toMatchObject({ code: "FORBIDDEN" });
+    await expect(
+      orgMemberAdmin.security.completeAccessReview({ note: "Review" })
+    ).rejects.toMatchObject({ code: "FORBIDDEN" });
+    await expect(
+      administrator.security.completeAccessReview({ note: "Reviewed access" })
+    ).resolves.toMatchObject({ note: "Reviewed access" });
   });
 
   it("permits an analyst to view transactions and update an investigation case", async () => {
@@ -560,6 +631,131 @@ describe("Clerk-protected FraudLens APIs", () => {
     });
   });
 
+  it("suspends organization writes during incident mode while preserving administrator recovery", async () => {
+    const orgId = "org_incident_mode";
+    const manager = appRouter.createCaller(
+      createContext(createUser("manager"), orgId, "manager")
+    );
+    const administrator = appRouter.createCaller(
+      createContext(createUser("admin"), orgId, "admin")
+    );
+    await expect(
+      administrator.security.setIncidentMode({
+        enabled: true,
+        note: "Investigating a suspected workspace compromise.",
+      })
+    ).resolves.toMatchObject({ incidentMode: true, orgId });
+    await expect(manager.security.controls()).resolves.toMatchObject({
+      incidentMode: true,
+    });
+    await expect(
+      manager.modelRegistry.createChallenger({
+        modelKey: "fraudlens-demonstration",
+        version: "incident-candidate",
+        artifactHash: "sha256-incident-candidate",
+        datasetLabel: "Reviewed holdout",
+        evaluation: {
+          precisionMilli: 400,
+          recallMilli: 700,
+          f1Milli: 500,
+          prAucMilli: 600,
+          threshold: 0.9,
+          reviewed: 1000,
+        },
+        changeNote: "This write should be blocked during incident mode.",
+      })
+    ).rejects.toMatchObject({ code: "FORBIDDEN" });
+    await expect(
+      administrator.security.setIncidentMode({ enabled: false })
+    ).resolves.toMatchObject({ incidentMode: false, orgId });
+  });
+
+  it("restricts model registry promotion to managers and organization administrators", async () => {
+    const orgId = "org_model_registry_governance";
+    const analyst = appRouter.createCaller(
+      createContext(createUser("analyst"), orgId, "analyst")
+    );
+    const manager = appRouter.createCaller(
+      createContext(createUser("manager"), orgId, "manager")
+    );
+    const memberAdmin = appRouter.createCaller({
+      ...createContext(createUser("admin"), orgId, "admin"),
+      orgRole: "org:member",
+    } as TrpcContext);
+    const administrator = appRouter.createCaller(
+      createContext(createUser("admin"), orgId, "admin")
+    );
+
+    await expect(analyst.modelRegistry.active()).rejects.toMatchObject({
+      code: "FORBIDDEN",
+    });
+    await expect(manager.modelRegistry.active()).resolves.toMatchObject({
+      status: "champion",
+    });
+    const candidate = await manager.modelRegistry.createChallenger({
+      modelKey: "fraudlens-demonstration",
+      version: "auth-candidate-1",
+      artifactHash: "sha256-auth-candidate",
+      datasetLabel: "Reviewed holdout",
+      evaluation: {
+        precisionMilli: 400,
+        recallMilli: 700,
+        f1Milli: 500,
+        prAucMilli: 600,
+        threshold: 0.9,
+        reviewed: 1000,
+      },
+      changeNote: "Candidate added for authorization coverage.",
+    });
+    await expect(
+      memberAdmin.modelRegistry.approve({ id: candidate.id })
+    ).rejects.toMatchObject({ code: "FORBIDDEN" });
+    await expect(
+      administrator.modelRegistry.approve({ id: candidate.id })
+    ).resolves.toMatchObject({ status: "champion" });
+  });
+
+  it("restricts retention governance to managers and organization administrators", async () => {
+    const orgId = "org_retention_governance";
+    const analyst = appRouter.createCaller(
+      createContext(createUser("analyst"), orgId, "analyst")
+    );
+    const manager = appRouter.createCaller(
+      createContext(createUser("manager"), orgId, "manager")
+    );
+    const orgMemberAdmin = appRouter.createCaller({
+      ...createContext(createUser("admin"), orgId, "admin"),
+      orgRole: "org:member",
+    } as TrpcContext);
+    const administrator = appRouter.createCaller(
+      createContext(createUser("admin"), orgId, "admin")
+    );
+
+    await expect(analyst.retention.active()).rejects.toMatchObject({
+      code: "FORBIDDEN",
+    });
+    await expect(manager.retention.active()).resolves.toMatchObject({
+      version: 1,
+      status: "active",
+    });
+    const draft = await manager.retention.createDraft({
+      transactionRetentionDays: 180,
+      evidenceRetentionDays: 180,
+      auditRetentionDays: 365,
+      effectiveAt: new Date("2026-09-01T00:00:00.000Z"),
+      changeNote: "Approved governance retention review.",
+    });
+    await expect(
+      analyst.retention.approve({ id: draft.id })
+    ).rejects.toMatchObject({ code: "FORBIDDEN" });
+    await expect(
+      orgMemberAdmin.retention.approve({ id: draft.id })
+    ).rejects.toMatchObject({ code: "FORBIDDEN" });
+    await expect(
+      administrator.retention.approve({ id: draft.id })
+    ).resolves.toMatchObject({ version: 2, status: "active" });
+  });
+
   it("requires manager access and keeps operational reports inside the active organization", async () => {
     const analyst = appRouter.createCaller(
       createContext(createUser("analyst"), "org_report_access")
@@ -586,7 +782,18 @@ describe("Clerk-protected FraudLens APIs", () => {
 
     const firstReport = await firstWorkspace.reports.overview();
     const secondReport = await secondWorkspace.reports.overview();
-    const csv = await firstWorkspace.reports.downloadCsv();
+    await expect(
+      firstWorkspace.reports.downloadCsv({
+        filters: {},
+        reason: "no",
+        rowLimit: 1,
+      })
+    ).rejects.toMatchObject({ code: "BAD_REQUEST" });
+    const csv = await firstWorkspace.reports.downloadCsv({
+      filters: {},
+      reason: "Quarterly investigator review",
+      rowLimit: 1,
+    });
 
     expect(
       firstReport.rows.some(row => row.reference === assessed.reference)
@@ -635,6 +842,95 @@ describe("Clerk-protected FraudLens APIs", () => {
     await expect(
       secondWorkspace.apiKeys.revoke({ id: issued.apiKey.id })
     ).rejects.toThrow("API key not found in this organization.");
+  });
+
+  it("keeps guided checklist updates inside the active organization", async () => {
+    const firstWorkspace = appRouter.createCaller(
+      createContext(createUser("analyst"), "org_checklist_first", "analyst")
+    );
+    const secondWorkspace = appRouter.createCaller(
+      createContext(createUser("analyst"), "org_checklist_second", "analyst")
+    );
+    const firstRecord = (await firstWorkspace.risk.list({}))[0];
+    if (!firstRecord) throw new Error("Expected a demo transaction");
+    const caseId = firstRecord.id;
+    const firstChecklist = await firstWorkspace.risk.checklist({ id: caseId });
+    expect(firstChecklist.completedCount).toBe(0);
+    await expect(
+      firstWorkspace.risk.updateChecklist({
+        id: caseId,
+        itemKey: "identity_verification",
+        completed: true,
+        note: "Reviewed through approved workflow.",
+      })
+    ).resolves.toMatchObject({
+      item: {
+        itemKey: "identity_verification",
+        completed: true,
+      },
+      completedCount: 1,
+    });
+    await expect(
+      secondWorkspace.risk.checklist({ id: caseId })
+    ).resolves.toMatchObject({
+      completedCount: 0,
+      items: expect.arrayContaining([
+        expect.objectContaining({
+          itemKey: "identity_verification",
+          completed: false,
+          note: "",
+        }),
+      ]),
+    });
+  });
+
+  it("governs Policy Studio by application role and Clerk organization administrator status", async () => {
+    const orgId = `org_policy_auth_${Date.now()}`;
+    const analyst = appRouter.createCaller(
+      createContext(createUser("analyst"), orgId, "analyst")
+    );
+    const manager = appRouter.createCaller(
+      createContext(createUser("manager"), orgId, "manager")
+    );
+    const organizationMemberAdmin = appRouter.createCaller({
+      ...createContext(createUser("admin"), orgId, "admin"),
+      orgRole: "org:member",
+    } as TrpcContext);
+    const administrator = appRouter.createCaller(
+      createContext(createUser("admin"), orgId, "admin")
+    );
+
+    await expect(analyst.policy.active()).rejects.toMatchObject({
+      code: "FORBIDDEN",
+    });
+    await expect(manager.policy.active()).resolves.toMatchObject({
+      version: 1,
+    });
+    const draft = await manager.policy.createDraft({
+      config: {
+        highRiskThreshold: 72,
+        mediumRiskThreshold: 35,
+        highAmountThreshold: 1500,
+        mediumAmountThreshold: 750,
+        lowAmountThreshold: 300,
+        highVelocityCount: 5,
+        mediumVelocityCount: 3,
+        policyHighValueAmount: 2000,
+        policyVelocityCount: 6,
+      },
+      changeNote: "Authorization test policy draft.",
+    });
+    await expect(
+      manager.policy.approve({ id: draft.id })
+    ).rejects.toMatchObject({
+      code: "FORBIDDEN",
+    });
+    await expect(
+      organizationMemberAdmin.policy.approve({ id: draft.id })
+    ).rejects.toMatchObject({ code: "FORBIDDEN" });
+    await expect(
+      administrator.policy.approve({ id: draft.id })
+    ).resolves.toMatchObject({ version: 2, status: "active" });
   });
 
   it("permits managers and administrators to view model-monitoring data", async () => {
