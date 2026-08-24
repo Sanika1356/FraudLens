@@ -1,4 +1,6 @@
 export const RISK_LEVELS = ["low", "medium", "high"] as const;
+import { DEFAULT_RISK_POLICY, RiskPolicyConfig } from "./riskPolicy";
+
 export const CASE_STATUSES = [
   "under_review",
   "confirmed_fraud",
@@ -26,10 +28,18 @@ export type RiskFactor = {
   detail: string;
 };
 
+export type PolicySignal = {
+  key: string;
+  label: string;
+  impact: "watch" | "escalate";
+  detail: string;
+};
+
 export type RiskDecision = {
   riskLevel: RiskLevel;
   probability: number;
   factors: RiskFactor[];
+  policySignals: PolicySignal[];
   deterministicExplanation: string;
 };
 
@@ -50,12 +60,63 @@ function factor(
   return { key, label, impact, detail };
 }
 
-export function scoreTransaction(input: RiskInput): RiskDecision {
+export function evaluatePolicySignals(
+  input: RiskInput,
+  probability: number,
+  policy: RiskPolicyConfig = DEFAULT_RISK_POLICY
+): PolicySignal[] {
+  const signals: PolicySignal[] = [];
+  if (input.amount >= policy.policyHighValueAmount) {
+    signals.push({
+      key: "policy_high_value_review",
+      label: "High-value policy review",
+      impact: "escalate",
+      detail:
+        "The amount exceeds the demonstration policy’s enhanced-review threshold.",
+    });
+  }
+  if (
+    input.deviceStatus === "new" &&
+    input.transactionCountry !== input.accountCountry
+  ) {
+    signals.push({
+      key: "policy_cross_border_new_device",
+      label: "Cross-border new-device review",
+      impact: "escalate",
+      detail:
+        "A new device and country mismatch are present together; confirm the payment context.",
+    });
+  }
+  if (input.recentTransactionCount >= policy.policyVelocityCount) {
+    signals.push({
+      key: "policy_velocity_watch",
+      label: "Velocity watch",
+      impact: "watch",
+      detail:
+        "The recent activity count is high enough to warrant a broader activity review.",
+    });
+  }
+  if (probability >= 70) {
+    signals.push({
+      key: "policy_high_risk_queue",
+      label: "High-risk queue policy",
+      impact: "escalate",
+      detail:
+        "The score meets the current high-risk review band; human confirmation is required.",
+    });
+  }
+  return signals;
+}
+
+export function scoreTransaction(
+  input: RiskInput,
+  policy: RiskPolicyConfig = DEFAULT_RISK_POLICY
+): RiskDecision {
   let score = 8;
   const factors: RiskFactor[] = [];
   const normalisedCategory = input.merchantCategory.trim().toLowerCase();
 
-  if (input.amount >= 1500) {
+  if (input.amount >= policy.highAmountThreshold) {
     score += 31;
     factors.push(
       factor(
@@ -65,7 +126,7 @@ export function scoreTransaction(input: RiskInput): RiskDecision {
         "The amount is much higher than a routine card payment."
       )
     );
-  } else if (input.amount >= 750) {
+  } else if (input.amount >= policy.mediumAmountThreshold) {
     score += 19;
     factors.push(
       factor(
@@ -75,7 +136,7 @@ export function scoreTransaction(input: RiskInput): RiskDecision {
         "The amount is larger than a typical everyday purchase."
       )
     );
-  } else if (input.amount >= 300) {
+  } else if (input.amount >= policy.lowAmountThreshold) {
     score += 9;
     factors.push(
       factor(
@@ -111,7 +172,7 @@ export function scoreTransaction(input: RiskInput): RiskDecision {
     );
   }
 
-  if (input.recentTransactionCount >= 5) {
+  if (input.recentTransactionCount >= policy.highVelocityCount) {
     score += 16;
     factors.push(
       factor(
@@ -121,7 +182,7 @@ export function scoreTransaction(input: RiskInput): RiskDecision {
         "Several transactions were recorded within a short review window."
       )
     );
-  } else if (input.recentTransactionCount >= 3) {
+  } else if (input.recentTransactionCount >= policy.mediumVelocityCount) {
     score += 8;
     factors.push(
       factor(
@@ -159,7 +220,11 @@ export function scoreTransaction(input: RiskInput): RiskDecision {
 
   const probability = Math.min(96, Math.max(4, Math.round(score)));
   const riskLevel: RiskLevel =
-    probability >= 70 ? "high" : probability >= 35 ? "medium" : "low";
+    probability >= policy.highRiskThreshold
+      ? "high"
+      : probability >= policy.mediumRiskThreshold
+        ? "medium"
+        : "low";
   const leadingFactors = factors
     .slice(0, 3)
     .map(item => item.label.toLowerCase());
@@ -168,8 +233,15 @@ export function scoreTransaction(input: RiskInput): RiskDecision {
       ? leadingFactors.join(", ")
       : "no strong risk indicators";
   const deterministicExplanation = `This transaction is assessed as ${riskLevel} risk at ${probability}% because of ${reason}. Human review should confirm the outcome before any action is taken.`;
+  const policySignals = evaluatePolicySignals(input, probability, policy);
 
-  return { riskLevel, probability, factors, deterministicExplanation };
+  return {
+    riskLevel,
+    probability,
+    factors,
+    policySignals,
+    deterministicExplanation,
+  };
 }
 
 export function fallbackSummary(decision: RiskDecision) {

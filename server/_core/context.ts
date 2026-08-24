@@ -1,7 +1,11 @@
 import { getAuth, type ExpressRequestWithAuth } from "@clerk/express";
 import type { CreateExpressContextOptions } from "@trpc/server/adapters/express";
 import type { User } from "../../drizzle/schema";
-import { getUserByOpenId, upsertUser } from "../db";
+import {
+  getOrCreateOrganizationRole,
+  getUserByOpenId,
+  upsertUser,
+} from "../db";
 import { resolveBootstrapRole } from "./env";
 import { captureServerException, logServerError } from "./monitoring";
 
@@ -13,6 +17,8 @@ export type TrpcContext = {
   orgId: string | null;
   /** The current user's Clerk membership role in the active organization. */
   orgRole: string | null;
+  /** FraudLens application role resolved for the active organization. */
+  appRole?: User["role"] | null;
 };
 
 function createSessionUser(openId: string): User {
@@ -35,6 +41,7 @@ export async function createContext(
 ): Promise<TrpcContext> {
   const auth = getAuth(opts.req as ExpressRequestWithAuth);
   let user: User | null = null;
+  let appRole: User["role"] | null = null;
 
   if (auth.userId) {
     try {
@@ -62,9 +69,25 @@ export async function createContext(
       });
     }
 
+    // Resolve application privileges separately for the active organization.
+    // The legacy users.role field is not used for production authorization.
+    if (auth.orgId) {
+      appRole = await getOrCreateOrganizationRole(
+        auth.orgId,
+        auth.userId,
+        resolveBootstrapRole(auth.userId)
+      );
+    }
+
     // A local database is optional in development, so an authenticated Clerk
     // session remains valid while user persistence is unavailable.
     user ??= createSessionUser(auth.userId);
+  }
+
+  if (auth.userId && auth.orgId && !appRole) {
+    // Do not retain a potentially stale global role when the organization role
+    // lookup failed; only immutable bootstrap access survives this failure.
+    appRole = resolveBootstrapRole(auth.userId);
   }
 
   return {
@@ -73,5 +96,6 @@ export async function createContext(
     user,
     orgId: auth.orgId ?? null,
     orgRole: auth.orgRole ?? null,
+    appRole,
   };
 }

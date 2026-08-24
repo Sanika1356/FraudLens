@@ -66,7 +66,7 @@ The complete safe examples are maintained in [`.env.example`](../.env.example). 
 
 ## Workspace access and roles
 
-A user must be authenticated with [Clerk][1] and must select an active Clerk organization before accessing workspace data. Every organization-scoped query is filtered by the active organization ID. A user’s FraudLens role and Clerk organization membership role are separate controls; administrator operations require both FraudLens administrator access and Clerk organization administrator membership.
+A user must be authenticated with [Clerk][1] and must select an active Clerk organization before accessing workspace data. Every organization-scoped query is filtered by the active organization ID. A user’s FraudLens role and Clerk organization membership role are separate controls; administrator operations require both FraudLens administrator access and Clerk organization administrator membership. FraudLens application roles are stored per organization in `organizationRoles`, so a manager or administrator in one workspace does not inherit that application privilege in another workspace. Deploy the `0012_tranquil_retro_girl` migration before using dashboard role management; existing non-owner roles should be reviewed and re-assigned by the bootstrap owner after migration.
 
 | Role          | Primary responsibilities                                                 | Main access                                                                                                                                                                                                  |
 | ------------- | ------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
@@ -74,7 +74,7 @@ A user must be authenticated with [Clerk][1] and must select an active Clerk org
 | Manager       | Operate the workspace and supervise review quality.                      | All analyst actions plus CSV import, assignments, queues, workload views, reports and exports, model health, drift, audit review, API keys and request logs, notification preferences, and weekly summaries. |
 | Administrator | Manage membership and security-sensitive organization controls.          | All manager actions plus directory, invitations, role changes, member deactivation, session revocation, and invitation revocation. Clerk organization administrator membership is also required.             |
 
-The initial administrator is selected by matching the signed-in Clerk user ID against `OWNER_OPEN_ID`. Users listed in `MANAGER_OPEN_IDS` bootstrap as managers unless they are the owner. After bootstrap, administrators should use the dashboard controls to manage membership and roles. If a user can sign in but sees a workspace authorization error, confirm that the user belongs to the selected Clerk organization and that the organization membership role satisfies the requested operation.
+The initial administrator is selected by matching the signed-in Clerk user ID against `OWNER_OPEN_ID`. Users listed in `MANAGER_OPEN_IDS` bootstrap as managers unless they are the owner, and that bootstrap applies only when a user first enters an organization without an existing role mapping. After bootstrap, administrators should use the dashboard controls to manage membership and roles. The legacy `users.role` value is retained for compatibility but is not used for production authorization. If a user can sign in but sees a workspace authorization error, confirm that the user belongs to the selected Clerk organization and that the organization membership role satisfies the requested operation.
 
 ### Membership administration
 
@@ -84,7 +84,29 @@ Administrators can open the workspace directory to invite members, change a memb
 
 Analysts start in the Command Center, review the priority queue, and open a transaction detail view to inspect the deterministic score, factors, case status, notes, tags, assignment, priority, and due date. A risk label supports review; it is not a final decision. Record a concise case note and a resolution reason when marking a case as confirmed fraud or legitimate. Keep the evidence trail factual and avoid copying unnecessary personal data into notes.
 
-Managers can assign cases, set priorities and due dates, claim unassigned work, inspect workload distribution, import transaction CSVs, and review operational reports. CSV import validates the schema and risk inputs before persistence; test an import with a small synthetic file before using a larger batch. Evidence uploads use private Supabase storage and organization-scoped storage keys [4]. Never make the evidence bucket public or place service-role credentials in browser code.
+Managers can assign cases, set priorities and due dates, claim unassigned work, inspect workload distribution, import transaction CSVs, and review operational reports. CSV import validates the schema and risk inputs before persistence; test an import with a small synthetic file before using a larger batch. Evidence uploads use private Supabase storage and organization-scoped storage keys [4]. Never make the evidence bucket public or place service-role credentials in browser code. Saved external evidence links are intentionally supported, but the interface warns users to verify the destination domain before signing in or sharing information.
+
+### Guided review checklist
+
+Open a transaction detail page to use the **Guided review checklist**. The checklist includes identity and account context, device and access context, merchant and payment context, related activity, and evidence-quality review. Analysts can complete or reopen individual items and add a concise note of up to 500 characters. The checklist supports consistent investigation coverage but does not make a fraud decision, automatically close a case, or replace the required case note and resolution reason.
+
+Checklist updates are scoped to the active Clerk organization and are recorded as `case.checklist_updated` audit events. The audit event records the checklist key and completion state, not the note text. Keep checklist notes factual and minimal: do not paste credentials, full payment-card data, or unnecessary personal information. See [`ROADMAP_RELEASE_6.md`](../ROADMAP_RELEASE_6.md) for the data model and migration details.
+
+### Incident mode
+
+Use **Security Center → Incident mode** when investigating suspected workspace compromise, provider outage, or data-integrity concerns. Enabling requires a concise incident note and both the FraudLens administrator role and `org:admin` membership in the active Clerk organization. While active, server-side workspace writes and public transaction ingestion are suspended; read-only investigation and the administrator recovery path remain available. External callers receive a retryable 503 response and should honor `Retry-After`. Exit incident mode only after the incident is contained and the workspace has been verified. Activation and deactivation are audited. See [`ROADMAP_RELEASE_10.md`](../ROADMAP_RELEASE_10.md) for the migration and residual-risk details.
+
+### Model Registry
+
+Open **Model Registry** to compare and register evaluated challengers. Enter aggregate evaluation metrics, the approved dataset label, an opaque artifact fingerprint, and a governance note; never paste raw evaluation rows, credentials, or model secrets into the workspace. Use **Preview comparison** before registering a challenger. Only a FraudLens administrator who is also `org:admin` in the active Clerk organization can approve a challenger or restore a retired champion. Registry promotion is a governance record only in this release and does not change live manual scoring or deploy an artifact. See [`ROADMAP_RELEASE_9.md`](../ROADMAP_RELEASE_9.md) for the migration and residual-risk details.
+
+### Retention policies
+
+Open **Retention Policies** to review the active transaction, evidence, and audit-event windows. Managers can preview proposed eligibility dates and create a draft with a required governance note. Approval and rollback require both the FraudLens administrator application role and `org:admin` membership in the active Clerk organization. The page is governance-only: this release does not delete records, start cleanup jobs, or configure provider storage lifecycle rules. Obtain legal/compliance approval and follow the tested recovery process before implementing any deletion workflow. See [`ROADMAP_RELEASE_8.md`](../ROADMAP_RELEASE_8.md) for migration and residual-risk details.
+
+### Secure report exports
+
+Operational CSV and summary downloads are manager-only actions. Before downloading, apply the narrowest practical reporting filters, enter an export reason of at least five characters, and choose a maximum of 1–1,000 rows. The reason, filters, row limit, and exported count are recorded in the organization-scoped audit event. Do not place credentials, full payment-card data, or unnecessary customer information in the reason. These controls improve accountability but do not replace data classification, retention, or approved access-review procedures. See [`ROADMAP_RELEASE_7.md`](../ROADMAP_RELEASE_7.md) for the release security boundary and residual risks.
 
 ## Alert configuration
 

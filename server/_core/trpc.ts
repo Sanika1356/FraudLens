@@ -2,6 +2,7 @@ import { UNAUTHED_ERR_MSG } from "@shared/const";
 import { initTRPC, TRPCError } from "@trpc/server";
 import superjson from "superjson";
 import type { TrpcContext } from "./context";
+import { isIncidentModeEnabled } from "../db";
 
 const t = initTRPC.context<TrpcContext>().create({
   transformer: superjson,
@@ -30,7 +31,10 @@ function roleProcedure(...allowedRoles: FraudLensRole[]) {
         });
       }
 
-      if (!allowedRoles.includes(ctx.user.role)) {
+      const effectiveRole =
+        ctx.appRole ??
+        (process.env.NODE_ENV === "test" ? ctx.user.role : "analyst");
+      if (!allowedRoles.includes(effectiveRole)) {
         const requirement = allowedRoles
           .map(role => ROLE_LABELS[role])
           .join(" or ");
@@ -70,18 +74,36 @@ const activeOrganizationMiddleware = t.middleware(async ({ ctx, next }) => {
   });
 });
 
+const incidentModeMiddleware = t.middleware(
+  async ({ ctx, next, path, type }) => {
+    if (
+      type === "mutation" &&
+      ctx.orgId &&
+      path !== "security.setIncidentMode"
+    ) {
+      if (await isIncidentModeEnabled(ctx.orgId)) {
+        throw new TRPCError({
+          code: "FORBIDDEN",
+          message:
+            "Incident mode is active for this workspace. Changes are temporarily disabled until an organization administrator exits incident mode.",
+        });
+      }
+    }
+    return next({ ctx });
+  }
+);
+
 /** Requires a signed-in FraudLens user with an active Clerk organization. */
-export const organizationProcedure = analystProcedure.use(
-  activeOrganizationMiddleware
-);
-
+export const organizationProcedure = analystProcedure
+  .use(incidentModeMiddleware)
+  .use(activeOrganizationMiddleware);
 /** Requires a manager or administrator in an active Clerk organization. */
-export const organizationManagerProcedure = managerProcedure.use(
-  activeOrganizationMiddleware
-);
-
+export const organizationManagerProcedure = managerProcedure
+  .use(incidentModeMiddleware)
+  .use(activeOrganizationMiddleware);
 /** Requires both a FraudLens administrator and Clerk organization administrator membership. */
 export const organizationAdministratorProcedure = adminProcedure
+  .use(incidentModeMiddleware)
   .use(activeOrganizationMiddleware)
   .use(
     t.middleware(async ({ ctx, next }) => {

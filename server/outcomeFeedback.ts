@@ -134,6 +134,78 @@ export function buildModelQualityReport(feedback: OutcomeFeedbackMetric[]) {
   };
 }
 
+export type ThresholdAnalysis = {
+  threshold: number;
+  reviewed: number;
+  projectedHighRisk: number;
+  confusionMatrix: {
+    truePositive: number;
+    falsePositive: number;
+    falseNegative: number;
+    trueNegative: number;
+  };
+  precisionMilli: number | null;
+  recallMilli: number | null;
+  f1Milli: number | null;
+};
+
+export function buildThresholdAnalysis(
+  records: Array<{ id: number; probability: number }>,
+  feedback: Array<{ transactionId: number; actualOutcome: ActualOutcome }>,
+  threshold: number
+): ThresholdAnalysis {
+  const feedbackByTransaction = new Map(
+    feedback.map(item => [item.transactionId, item.actualOutcome])
+  );
+  const counts = {
+    truePositive: 0,
+    falsePositive: 0,
+    falseNegative: 0,
+    trueNegative: 0,
+  };
+  for (const record of records) {
+    const actualOutcome = feedbackByTransaction.get(record.id);
+    if (!actualOutcome) continue;
+    const predictedFraud = record.probability >= threshold;
+    if (predictedFraud && actualOutcome === "fraud") counts.truePositive += 1;
+    if (predictedFraud && actualOutcome === "legitimate")
+      counts.falsePositive += 1;
+    if (!predictedFraud && actualOutcome === "fraud") counts.falseNegative += 1;
+    if (!predictedFraud && actualOutcome === "legitimate")
+      counts.trueNegative += 1;
+  }
+  const reviewed = Object.values(counts).reduce(
+    (total, value) => total + value,
+    0
+  );
+  const precisionMilli = ratioMilli(
+    counts.truePositive,
+    counts.truePositive + counts.falsePositive
+  );
+  const recallMilli = ratioMilli(
+    counts.truePositive,
+    counts.truePositive + counts.falseNegative
+  );
+  const f1Milli =
+    precisionMilli === null ||
+    recallMilli === null ||
+    precisionMilli + recallMilli === 0
+      ? null
+      : Math.round(
+          (2 * precisionMilli * recallMilli) / (precisionMilli + recallMilli)
+        );
+  return {
+    threshold,
+    reviewed,
+    projectedHighRisk: records.filter(record => record.probability >= threshold)
+      .length,
+    confusionMatrix: counts,
+    precisionMilli,
+    recallMilli,
+    f1Milli,
+  };
+}
+
 export function milliToPercent(value: number | null) {
   return value === null ? null : value / 10;
 }

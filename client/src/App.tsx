@@ -18,7 +18,11 @@ import {
   DriftPage,
   ModelHealthPage,
   NotificationSettingsPage,
+  ModelRegistryPage,
+  PolicyStudioPage,
   ReportsPage,
+  RetentionPolicyPage,
+  SecurityCenterPage,
   TransactionDetailPage,
   TransactionImportPage,
   TransactionsPage,
@@ -27,7 +31,7 @@ import {
 import NotFound from "@/pages/NotFound";
 import { Redirect, Route, Switch } from "wouter";
 import ErrorBoundary from "./components/ErrorBoundary";
-import { ThemeProvider } from "./contexts/ThemeContext";
+import { ThemeProvider, useTheme } from "./contexts/ThemeContext";
 
 function WorkspaceRouter() {
   return (
@@ -46,6 +50,10 @@ function WorkspaceRouter() {
       <Route path="/reports" component={ReportsPage} />
       <Route path="/api" component={ApiIntegrationsPage} />
       <Route path="/team" component={AdministratorManagementPage} />
+      <Route path="/security" component={SecurityCenterPage} />
+      <Route path="/policy" component={PolicyStudioPage} />
+      <Route path="/model-registry" component={ModelRegistryPage} />
+      <Route path="/retention" component={RetentionPolicyPage} />
       <Route path="/404" component={NotFound} />
       <Route component={NotFound} />
     </Switch>
@@ -134,33 +142,40 @@ function AuthenticationScreen({ mode }: { mode: "sign-in" | "sign-up" }) {
   );
 }
 
+function AppContent() {
+  const { theme } = useTheme();
+  return (
+    <TooltipProvider>
+      <Toaster theme={theme} />
+      <Switch>
+        <Route path="/sign-in/*">
+          <AuthenticationScreen mode="sign-in" />
+        </Route>
+        <Route path="/sign-in">
+          <AuthenticationScreen mode="sign-in" />
+        </Route>
+        <Route path="/sign-up/*">
+          <AuthenticationScreen mode="sign-up" />
+        </Route>
+        <Route path="/sign-up">
+          <AuthenticationScreen mode="sign-up" />
+        </Route>
+        <Route path="/select-organization">
+          <OrganizationSelectionScreen />
+        </Route>
+        <Route>
+          <ProtectedWorkspace />
+        </Route>
+      </Switch>
+    </TooltipProvider>
+  );
+}
+
 export default function App() {
   return (
     <ErrorBoundary>
-      <ThemeProvider defaultTheme="dark">
-        <TooltipProvider>
-          <Toaster theme="dark" />
-          <Switch>
-            <Route path="/sign-in/*">
-              <AuthenticationScreen mode="sign-in" />
-            </Route>
-            <Route path="/sign-in">
-              <AuthenticationScreen mode="sign-in" />
-            </Route>
-            <Route path="/sign-up/*">
-              <AuthenticationScreen mode="sign-up" />
-            </Route>
-            <Route path="/sign-up">
-              <AuthenticationScreen mode="sign-up" />
-            </Route>
-            <Route path="/select-organization">
-              <OrganizationSelectionScreen />
-            </Route>
-            <Route>
-              <ProtectedWorkspace />
-            </Route>
-          </Switch>
-        </TooltipProvider>
+      <ThemeProvider defaultTheme="dark" switchable>
+        <AppContent />
       </ThemeProvider>
     </ErrorBoundary>
   );

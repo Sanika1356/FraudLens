@@ -9,11 +9,15 @@ import {
   PUBLIC_API_RATE_LIMIT_PER_MINUTE,
 } from "./apiKeys";
 import {
+  completeApiIdempotency,
   countApiRequestsSince,
   getApiKeyByHash,
+  releaseApiIdempotency,
+  reserveApiIdempotency,
   getTransactionReferencesByOrganization,
   recordApiRequestLog,
   touchApiKeyLastUsed,
+  isIncidentModeEnabled,
 } from "./db";
 import { riskInputSchema, submitRiskAssessment } from "./routers";
 import type { RiskInput } from "./riskEngine";
@@ -39,6 +43,7 @@ type ApiErrorCode =
   | "unauthorized"
   | "forbidden"
   | "rate_limited"
+  | "temporarily_unavailable"
   | "conflict"
   | "internal_error"
   | "payload_too_large";
@@ -83,6 +88,38 @@ async function logRequest(input: {
       area: "public_api",
       operation: "record_request_log",
     });
+  }
+}
+
+function stableJson(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(stableJson).join(",")}]`;
+  if (value && typeof value === "object") {
+    return `{${Object.entries(value as Record<string, unknown>)
+      .sort(([first], [second]) => first.localeCompare(second))
+      .map(([key, entry]) => `${JSON.stringify(key)}:${stableJson(entry)}`)
+      .join(",")}}`;
+  }
+  return JSON.stringify(value);
+}
+
+function replayIdempotentResponse(
+  response: Response,
+  record: Awaited<ReturnType<typeof reserveApiIdempotency>>["record"]
+): boolean {
+  if (
+    record.status !== "completed" ||
+    !record.responseStatus ||
+    !record.responseJson
+  ) {
+    return false;
+  }
+  try {
+    response
+      .status(record.responseStatus)
+      .json(JSON.parse(record.responseJson));
+    return true;
+  } catch {
+    return false;
   }
 }
 
@@ -144,6 +181,24 @@ async function handleTransactionAssessment(
     return;
   }
 
+  if (await isIncidentModeEnabled(apiKey.orgId)) {
+    await logRequest({
+      orgId: apiKey.orgId,
+      apiKeyId: apiKey.id,
+      requestId: id,
+      responseStatus: 503,
+    });
+    response.setHeader("Retry-After", "300");
+    respondError(
+      response,
+      503,
+      "temporarily_unavailable",
+      "Transaction ingestion is temporarily suspended for this workspace.",
+      id
+    );
+    return;
+  }
+
   const recentRequests = await countApiRequestsSince(
     apiKey.id,
     new Date(Date.now() - 60_000)
@@ -184,6 +239,69 @@ async function handleTransactionAssessment(
     return;
   }
 
+  const rawIdempotencyKey = request.header("idempotency-key");
+  const idempotencyKey = rawIdempotencyKey?.trim() || null;
+  if (
+    rawIdempotencyKey &&
+    (!idempotencyKey ||
+      idempotencyKey.length > 128 ||
+      /[^A-Za-z0-9._:-]/.test(idempotencyKey))
+  ) {
+    await logRequest({
+      orgId: apiKey.orgId,
+      apiKeyId: apiKey.id,
+      requestId: id,
+      responseStatus: 400,
+    });
+    respondError(
+      response,
+      400,
+      "invalid_request",
+      "The Idempotency-Key header must be 1-128 characters using letters, numbers, dots, underscores, colons, or hyphens.",
+      id
+    );
+    return;
+  }
+
+  let idempotencyReservation: Awaited<
+    ReturnType<typeof reserveApiIdempotency>
+  > | null = null;
+  if (idempotencyKey) {
+    idempotencyReservation = await reserveApiIdempotency({
+      orgId: apiKey.orgId,
+      apiKeyId: apiKey.id,
+      idempotencyKey,
+      requestHash: hashApiKey(stableJson(parsed.data)),
+      expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
+    });
+    if (!idempotencyReservation.created) {
+      if (
+        idempotencyReservation.record.requestHash !==
+        hashApiKey(stableJson(parsed.data))
+      ) {
+        respondError(
+          response,
+          409,
+          "conflict",
+          "This Idempotency-Key was already used with a different request payload.",
+          id
+        );
+        return;
+      }
+      if (replayIdempotentResponse(response, idempotencyReservation.record))
+        return;
+      response.setHeader("Retry-After", "5");
+      respondError(
+        response,
+        409,
+        "conflict",
+        "An identical request is already being processed. Retry shortly.",
+        id
+      );
+      return;
+    }
+  }
+
   const reference = parsed.data.reference;
   if (reference) {
     const existingReferences = await getTransactionReferencesByOrganization(
@@ -220,18 +338,7 @@ async function handleTransactionAssessment(
       },
       reference
     );
-    await Promise.all([
-      touchApiKeyLastUsed(apiKey.id),
-      logRequest({
-        orgId: apiKey.orgId,
-        apiKeyId: apiKey.id,
-        requestId: id,
-        responseStatus: 201,
-        transactionReference: record.reference,
-        riskLevel: record.riskLevel,
-      }),
-    ]);
-    response.status(201).json({
+    const responseBody = {
       requestId: id,
       transaction: {
         id: record.id,
@@ -242,8 +349,34 @@ async function handleTransactionAssessment(
         casePriority: record.casePriority,
         createdAt: record.createdAt.toISOString(),
       },
-    });
+    };
+    await Promise.all([
+      touchApiKeyLastUsed(apiKey.id),
+      logRequest({
+        orgId: apiKey.orgId,
+        apiKeyId: apiKey.id,
+        requestId: id,
+        responseStatus: 201,
+        transactionReference: record.reference,
+        riskLevel: record.riskLevel,
+      }),
+      idempotencyKey
+        ? completeApiIdempotency(
+            apiKey.id,
+            idempotencyKey,
+            201,
+            JSON.stringify(responseBody),
+            record.reference
+          )
+        : Promise.resolve(),
+    ]);
+    response.status(201).json(responseBody);
   } catch (error) {
+    if (idempotencyKey) {
+      await releaseApiIdempotency(apiKey.id, idempotencyKey).catch(
+        () => undefined
+      );
+    }
     console.error(
       "[FraudLens] Public API transaction assessment failed",
       error
@@ -304,6 +437,10 @@ export function registerPublicApiRoutes(app: Express) {
           deviceStatus: "new",
           transactionHour: 2,
           recentTransactionCount: 5,
+        },
+        headers: {
+          "Idempotency-Key":
+            "Optional, 1-128 characters; identical retries replay the original response for 24 hours.",
         },
         responseFields: [
           "requestId",

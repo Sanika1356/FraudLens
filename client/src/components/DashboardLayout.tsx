@@ -24,6 +24,8 @@ import {
 import { useIsMobile } from "@/hooks/useMobile";
 import {
   Activity,
+  Archive,
+  Boxes,
   BellRing,
   CalendarClock,
   ClipboardList,
@@ -31,17 +33,38 @@ import {
   KeyRound,
   LayoutDashboard,
   LogOut,
+  Moon,
   PanelLeft,
   PlusCircle,
   Radar,
   ScrollText,
   ShieldCheck,
+  Sun,
+  SlidersHorizontal,
   Upload,
   UsersRound,
 } from "lucide-react";
 import { CSSProperties, useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
+import { useTheme } from "../contexts/ThemeContext";
 import { DashboardLayoutSkeleton } from "./DashboardLayoutSkeleton";
+
+function ThemeToggleButton({ className = "" }: { className?: string }) {
+  const { theme, toggleTheme } = useTheme();
+  const isDark = theme === "dark";
+  return (
+    <button
+      type="button"
+      onClick={() => toggleTheme?.()}
+      aria-label={isDark ? "Switch to light theme" : "Switch to dark theme"}
+      aria-pressed={isDark}
+      title={isDark ? "Switch to light theme" : "Switch to dark theme"}
+      className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-white/[0.08] bg-white/[0.035] text-slate-400 transition-colors hover:bg-white/[0.09] hover:text-cyan-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300 ${className}`}
+    >
+      {isDark ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
+    </button>
+  );
+}
 
 const menuItems = [
   { icon: LayoutDashboard, label: "Command Center", path: "/" },
@@ -102,6 +125,30 @@ const menuItems = [
     path: "/team",
     requiresAdmin: true,
   },
+  {
+    icon: ShieldCheck,
+    label: "Security Center",
+    path: "/security",
+    requiresManager: true,
+  },
+  {
+    icon: SlidersHorizontal,
+    label: "Policy Studio",
+    path: "/policy",
+    requiresManager: true,
+  },
+  {
+    icon: Boxes,
+    label: "Model Registry",
+    path: "/model-registry",
+    requiresManager: true,
+  },
+  {
+    icon: Archive,
+    label: "Retention Policies",
+    path: "/retention",
+    requiresManager: true,
+  },
 ];
 
 const SIDEBAR_WIDTH_KEY = "fraudlens-sidebar-width";
@@ -127,8 +174,8 @@ export default function DashboardLayout({
 
   if (!user) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-[#07111e] p-6 text-slate-100">
-        <div className="w-full max-w-md rounded-2xl border border-cyan-300/15 bg-slate-950/70 p-9 shadow-2xl shadow-cyan-950/30">
+      <div className="flex min-h-screen items-center justify-center bg-background p-6 text-foreground">
+        <div className="w-full max-w-md rounded-2xl border border-border bg-card p-9 shadow-2xl shadow-cyan-950/30">
           <div className="mb-7 flex h-11 w-11 items-center justify-center rounded-xl bg-cyan-300 text-slate-950">
             <ShieldCheck className="h-6 w-6" />
           </div>
@@ -220,20 +267,20 @@ function DashboardLayoutContent({
       <div className="relative" ref={sidebarRef}>
         <Sidebar
           collapsible="icon"
-          className="border-r border-white/[0.07] bg-[#081521] text-slate-300"
+          className="border-r border-sidebar-border bg-sidebar text-sidebar-foreground"
           disableTransition={isResizing}
         >
           <SidebarHeader className="h-[84px] justify-center px-3">
             <div className="flex w-full items-center gap-3 px-1">
               <button
                 onClick={toggleSidebar}
-                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-white/[0.08] bg-white/[0.035] text-slate-400 transition-colors hover:bg-white/[0.09] hover:text-cyan-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300"
+                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-border bg-background/60 text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                 aria-label="Toggle navigation"
               >
                 <PanelLeft className="h-4 w-4" />
               </button>
               {!isCollapsed && (
-                <div className="min-w-0">
+                <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2">
                     <div className="flex h-6 w-6 items-center justify-center rounded-md bg-cyan-300 text-slate-950">
                       <ShieldCheck className="h-3.5 w-3.5" />
@@ -247,6 +294,7 @@ function DashboardLayoutContent({
                   </p>
                 </div>
               )}
+              <ThemeToggleButton />
             </div>
           </SidebarHeader>
           <SidebarContent className="gap-0 px-2 pt-3">
@@ -325,13 +373,14 @@ function DashboardLayoutContent({
           onMouseDown={() => setIsResizing(true)}
         />
       </div>
-      <SidebarInset className="min-h-screen bg-[#07111e] text-slate-100">
+      <SidebarInset className="min-h-screen bg-background text-foreground">
         {isMobile && (
-          <div className="sticky top-0 z-40 flex h-14 items-center gap-2 border-b border-white/[0.07] bg-[#07111e]/95 px-3 backdrop-blur">
+          <div className="sticky top-0 z-40 flex h-14 items-center gap-2 border-b border-border bg-background/95 px-3 backdrop-blur">
             <SidebarTrigger className="h-9 w-9 rounded-lg border border-white/[0.08] bg-white/[0.04] text-slate-300" />
             <p className="text-sm font-semibold">
               {activeMenuItem?.label ?? "FraudLens"}
             </p>
+            <ThemeToggleButton className="ml-auto" />
           </div>
         )}
         <main className="min-h-screen p-4 sm:p-6 lg:p-8">{children}</main>

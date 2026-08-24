@@ -46,6 +46,20 @@ function parseStoredFactors(
   }
 }
 
+function parseStoredPolicySignals(
+  value: string | null | undefined,
+  fallback: ReturnType<typeof scoreTransaction>["policySignals"]
+) {
+  try {
+    const parsed: unknown = value ? JSON.parse(value) : null;
+    return Array.isArray(parsed)
+      ? (parsed as ReturnType<typeof scoreTransaction>["policySignals"])
+      : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
 /** Converts persisted transactions into the same report shape used by the dashboard. */
 export function transactionToRiskRecord(transaction: Transaction): RiskRecord {
   const input = {
@@ -77,6 +91,11 @@ export function transactionToRiskRecord(transaction: Transaction): RiskRecord {
     riskLevel: transaction.riskLabel,
     probability: transaction.riskProbability,
     factors: parseStoredFactors(transaction.factorJson, fallback.factors),
+    policySignals: parseStoredPolicySignals(
+      transaction.policySignalJson,
+      fallback.policySignals
+    ),
+    policyVersion: transaction.policyVersion,
     deterministicExplanation: transaction.deterministicExplanation,
   };
 }
